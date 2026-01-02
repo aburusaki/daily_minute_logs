@@ -17,10 +17,3 @@ export interface DailySummary {
   totalLogged: number;
   productivityScore: number;
 }
-
-// Added GeminiInsight interface to support AI generated insights
-export interface GeminiInsight {
-  summary: string;
-  recommendations: string[];
-  productivityTrend: string;
-}
