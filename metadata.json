@@ -1,0 +1,5 @@
+{
+  "name": "Minute Flow - Productivity Tracker",
+  "description": "A high-precision productivity tracker that allows you to log every minute of your day as productive or unproductive, inspired by grid-based physical journals. Features real-time tracking, data visualization, and cloud sync via Supabase.",
+  "requestFramePermissions": []
+}
