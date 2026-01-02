@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { MinuteStatus, DayData } from '../types';
 import { isFutureMinute, isCurrentMinute, getCurrentSeconds, formatTime } from '../utils/dateUtils';
@@ -13,6 +14,7 @@ const MinuteCell = React.memo(({
   isFuture, 
   isCurrent,
   currentSeconds,
+  isDarkMode,
   onToggle, 
   onMouseEnter 
 }: { 
@@ -21,19 +23,22 @@ const MinuteCell = React.memo(({
   isFuture: boolean; 
   isCurrent: boolean;
   currentSeconds: number;
+  isDarkMode: boolean;
   onToggle: (index: number) => void;
   onMouseEnter: (index: number) => void;
 }) => {
   const getBgColor = () => {
-    if (isFuture) return 'bg-slate-100';
-    if (isCurrent) return 'bg-white';
-    return status === MinuteStatus.PRODUCTIVE ? 'bg-green-500' : 'bg-red-500';
+    if (isFuture) return 'bg-slate-100 dark:bg-slate-800/50';
+    if (isCurrent) return 'bg-white dark:bg-slate-800';
+    // Use darker green in dark mode
+    return status === MinuteStatus.PRODUCTIVE ? 'bg-green-500 dark:bg-green-600' : 'bg-red-500';
   };
 
   if (isCurrent) {
     const radius = 8;
     const circumference = 2 * Math.PI * radius;
     const offset = circumference - (currentSeconds / 60) * circumference;
+    const productiveColor = isDarkMode ? '#16a34a' : '#22c55e';
 
     return (
       <div
@@ -47,8 +52,9 @@ const MinuteCell = React.memo(({
             cx="10"
             cy="10"
             r={radius}
-            fill="white"
-            stroke="#e2e8f0"
+            fill="currentColor"
+            className="text-white dark:text-slate-800"
+            stroke="currentColor"
             strokeWidth="1"
           />
           <circle
@@ -56,7 +62,7 @@ const MinuteCell = React.memo(({
             cy="10"
             r={radius}
             fill="none"
-            stroke={status === MinuteStatus.PRODUCTIVE ? '#22c55e' : '#ef4444'}
+            stroke={status === MinuteStatus.PRODUCTIVE ? productiveColor : '#ef4444'}
             strokeWidth="2.5"
             strokeDasharray={circumference}
             strokeDashoffset={offset}
@@ -64,7 +70,7 @@ const MinuteCell = React.memo(({
             className="transition-all duration-1000 ease-linear"
           />
         </svg>
-        <div className={`w-1 h-1 rounded-full animate-pulse ${status === MinuteStatus.PRODUCTIVE ? 'bg-green-500' : 'bg-red-500'}`} />
+        <div className={`w-1 h-1 rounded-full animate-pulse ${status === MinuteStatus.PRODUCTIVE ? 'bg-green-500 dark:bg-green-600' : 'bg-red-500'}`} />
       </div>
     );
   }
@@ -82,10 +88,12 @@ const MinuteCell = React.memo(({
 export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, onToggle }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [seconds, setSeconds] = useState(getCurrentSeconds());
+  const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains('dark'));
 
   useEffect(() => {
     const timer = setInterval(() => {
       setSeconds(getCurrentSeconds());
+      setIsDarkMode(document.documentElement.classList.contains('dark'));
     }, 1000);
     return () => clearInterval(timer);
   }, []);
@@ -119,7 +127,7 @@ export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, onToggle }) => 
 
   return (
     <div 
-      className="bg-white p-2 xs:p-3 sm:p-6 rounded-2xl shadow-xl border border-slate-200 select-none overflow-hidden"
+      className="bg-white dark:bg-slate-900 p-2 xs:p-3 sm:p-6 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 select-none overflow-hidden transition-colors duration-300"
       onMouseDown={handleMouseDown}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
@@ -132,7 +140,7 @@ export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, onToggle }) => 
           <div className="w-8 xs:w-10 sm:w-16 flex-shrink-0" /> {/* Spacer for hour label */}
           <div className="flex-1 grid grid-cols-6 gap-[2px] sm:gap-2">
             {['00', '10', '20', '30', '40', '50'].map(val => (
-              <div key={val} className="text-[7px] xs:text-[9px] sm:text-[10px] text-slate-400 font-mono font-bold uppercase tracking-widest text-center">
+              <div key={val} className="text-[7px] xs:text-[9px] sm:text-[10px] text-slate-400 dark:text-slate-600 font-mono font-bold uppercase tracking-widest text-center">
                 {val}
               </div>
             ))}
@@ -143,7 +151,7 @@ export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, onToggle }) => 
           {hours.map((chunks, hourIndex) => (
             <div key={hourIndex} className="flex items-center gap-1.5 xs:gap-2 sm:gap-4 group">
               {/* Hour Label */}
-              <div className="w-8 xs:w-10 sm:w-16 text-right text-[8px] xs:text-[10px] sm:text-xs font-bold text-slate-400 group-hover:text-slate-900 transition-colors font-mono flex-shrink-0">
+              <div className="w-8 xs:w-10 sm:w-16 text-right text-[8px] xs:text-[10px] sm:text-xs font-bold text-slate-400 dark:text-slate-600 group-hover:text-slate-900 dark:group-hover:text-slate-200 transition-colors font-mono flex-shrink-0">
                 {hourIndex.toString().padStart(2, '0')}h
               </div>
               
@@ -164,6 +172,7 @@ export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, onToggle }) => 
                           isFuture={future}
                           isCurrent={current}
                           currentSeconds={seconds}
+                          isDarkMode={isDarkMode}
                           onToggle={onToggle}
                           onMouseEnter={handleMouseEnter}
                         />
@@ -177,11 +186,11 @@ export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, onToggle }) => 
         </div>
       </div>
       
-      {/* Improved Legend */}
-      <div className="mt-6 sm:mt-10 flex flex-wrap justify-center gap-4 sm:gap-8 text-[8px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest border-t border-slate-50 pt-5">
-        <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-sm shadow-green-100"></div> Productive</div>
-        <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-sm shadow-red-100"></div> Unproductive</div>
-        <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-slate-100"></div> Future</div>
+      {/* Legend */}
+      <div className="mt-6 sm:mt-10 flex flex-wrap justify-center gap-4 sm:gap-8 text-[8px] sm:text-[10px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest border-t border-slate-50 dark:border-slate-800 pt-5">
+        <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-green-500 dark:bg-green-600 shadow-sm shadow-green-100 dark:shadow-green-900/10"></div> Productive</div>
+        <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-sm shadow-red-100 dark:shadow-red-900/10"></div> Unproductive</div>
+        <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-slate-100 dark:bg-slate-800"></div> Future</div>
       </div>
     </div>
   );
