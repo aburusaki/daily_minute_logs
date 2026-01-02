@@ -55,8 +55,10 @@ const App: React.FC = () => {
     };
     init();
 
-    if (supabase) {
-      const settingsChannel = supabase
+    // Use a local constant for supabase to satisfy TS null checks within the useEffect scope
+    const supabaseInstance = supabase;
+    if (supabaseInstance) {
+      const settingsChannel = supabaseInstance
         .channel(`settings_changes_${currentDate}`)
         .on(
           'postgres_changes',
@@ -77,7 +79,7 @@ const App: React.FC = () => {
         )
         .subscribe();
 
-      const dataChannel = supabase
+      const dataChannel = supabaseInstance
         .channel(`day_logs_changes_${currentDate}`)
         .on(
           'postgres_changes',
@@ -105,8 +107,8 @@ const App: React.FC = () => {
         .subscribe();
 
       return () => {
-        supabase.removeChannel(settingsChannel);
-        supabase.removeChannel(dataChannel);
+        supabaseInstance.removeChannel(settingsChannel);
+        supabaseInstance.removeChannel(dataChannel);
       };
     }
   }, [currentDate, applyModeToFuture]);
@@ -192,12 +194,10 @@ const App: React.FC = () => {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
-        {/* 1. Only the current minute above the grid */}
         <section className="flex justify-center">
           <CurrentMinuteProgress dayData={dayData} />
         </section>
 
-        {/* 2. Daily Flow Map Grid */}
         <section>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-md sm:text-lg font-bold text-slate-800 flex items-center gap-2">
@@ -215,7 +215,6 @@ const App: React.FC = () => {
           <MinuteGrid dayData={dayData} onToggle={handleToggleMinute} />
         </section>
 
-        {/* 3. Stats cards below the grid */}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200 shadow-sm">
             <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Productive</div>
@@ -238,7 +237,6 @@ const App: React.FC = () => {
           </div>
         </section>
 
-        {/* 4. Performance Analytics Dashboard */}
         <section>
           <h2 className="text-md sm:text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-indigo-600" viewBox="0 0 20 20" fill="currentColor">
