@@ -19,19 +19,16 @@ const App: React.FC = () => {
     return (saved as 'light' | 'dark') || 'dark';
   });
   
-  // Ref to keep track of current dayData for the real-time callback
   const dayDataRef = useRef<DayData | null>(null);
   useEffect(() => {
     dayDataRef.current = dayData;
   }, [dayData]);
 
-  // Ref for the current date to avoid stale closures in subscription callbacks
   const currentDateRef = useRef(currentDate);
   useEffect(() => {
     currentDateRef.current = currentDate;
   }, [currentDate]);
 
-  // Apply theme to document
   useEffect(() => {
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
@@ -83,11 +80,7 @@ const App: React.FC = () => {
         .channel(`settings_changes_${currentDate}`)
         .on(
           'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'app_settings'
-          },
+          { event: '*', schema: 'public', table: 'app_settings' },
           (payload) => {
             const newData = payload.new as { key?: string; value?: string };
             if (newData && newData.key === 'default_mode') {
@@ -105,23 +98,16 @@ const App: React.FC = () => {
         .channel(`day_logs_realtime_${currentDate}`)
         .on(
           'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'day_logs'
-          },
+          { event: '*', schema: 'public', table: 'day_logs' },
           (payload) => {
             const newData = payload.new as { date?: string; minutes?: MinuteStatus[] };
-            
             if (newData && newData.minutes && newData.date === currentDateRef.current) {
               const incomingData: DayData = {
                 date: newData.date,
                 minutes: newData.minutes as MinuteStatus[]
               };
-
               setDayData(incomingData);
               setLastSaved(new Date());
-
               const allLocal = storageService.getLocalAll();
               allLocal[incomingData.date] = incomingData;
               localStorage.setItem('minute_flow_data', JSON.stringify(allLocal));
@@ -139,14 +125,12 @@ const App: React.FC = () => {
 
   const handleToggleMinute = useCallback(async (index: number) => {
     if (!dayData) return;
-
     const newMinutes = [...dayData.minutes];
     const currentStatus = newMinutes[index];
     newMinutes[index] = 
       currentStatus === MinuteStatus.PRODUCTIVE 
         ? MinuteStatus.UNPRODUCTIVE 
         : MinuteStatus.PRODUCTIVE;
-    
     const newData = { ...dayData, minutes: newMinutes };
     setDayData(newData);
     await storageService.saveDayData(newData);
@@ -164,14 +148,31 @@ const App: React.FC = () => {
     );
   }
 
-  const currentMin = getCurrentMinuteIndex();
-  const productiveCount = dayData.minutes.slice(0, currentMin).filter(m => m === MinuteStatus.PRODUCTIVE).length;
-  const totalPossible = currentMin;
-  const score = totalPossible > 0 ? Math.round((productiveCount / totalPossible) * 100) : 100;
+  // --- Date-Aware Stats Calculation ---
+  const today = getTodayKey();
+  const currentMinIndex = getCurrentMinuteIndex();
+  
+  let statsEndIndex = 0;
+  let remainingMinutes = 0;
+  
+  if (currentDate < today) {
+    statsEndIndex = 1440; // Full day in the past
+    remainingMinutes = 0;
+  } else if (currentDate === today) {
+    statsEndIndex = currentMinIndex; // Only up to now for today
+    remainingMinutes = 1440 - currentMinIndex;
+  } else {
+    statsEndIndex = 0; // Nothing happened in the future
+    remainingMinutes = 1440;
+  }
+
+  const productiveCount = dayData.minutes.slice(0, statsEndIndex).filter(m => m === MinuteStatus.PRODUCTIVE).length;
+  const unproductiveCount = dayData.minutes.slice(0, statsEndIndex).filter(m => m === MinuteStatus.UNPRODUCTIVE).length;
+  const score = statsEndIndex > 0 ? Math.round((productiveCount / statsEndIndex) * 100) : 100;
+  // -------------------------------------
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 pb-20 transition-colors duration-300">
-      {/* Changed from sticky to normal flow */}
       <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-4 flex flex-col lg:flex-row justify-between items-center gap-4">
         <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-start">
           <div className="flex items-center gap-3">
@@ -263,11 +264,11 @@ const App: React.FC = () => {
           </div>
           <div className="bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors duration-300">
             <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1">Unproductive</div>
-            <div className="text-xl sm:text-2xl font-black text-red-500">{totalPossible - productiveCount} <span className="text-xs sm:text-sm font-medium text-slate-400 dark:text-slate-500">min</span></div>
+            <div className="text-xl sm:text-2xl font-black text-red-500">{unproductiveCount} <span className="text-xs sm:text-sm font-medium text-slate-400 dark:text-slate-500">min</span></div>
           </div>
           <div className="bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors duration-300">
             <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1">Remaining</div>
-            <div className="text-xl sm:text-2xl font-black text-slate-800 dark:text-slate-200">{1440 - currentMin} <span className="text-xs sm:text-sm font-medium text-slate-400 dark:text-slate-500">min</span></div>
+            <div className="text-xl sm:text-2xl font-black text-slate-800 dark:text-slate-200">{remainingMinutes} <span className="text-xs sm:text-sm font-medium text-slate-400 dark:text-slate-500">min</span></div>
           </div>
           <div className="bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors duration-300">
             <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1">Mode</div>
