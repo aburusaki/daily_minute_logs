@@ -28,7 +28,12 @@ const MinuteCell = React.memo(({
   onMouseEnter: (index: number) => void;
 }) => {
   const getBgColor = () => {
-    if (isFuture) return 'bg-slate-100 dark:bg-slate-800/50';
+    if (isFuture) {
+      // Show faint color for future to indicate the plan
+      return status === MinuteStatus.PRODUCTIVE 
+        ? 'bg-green-100 dark:bg-green-900/20' 
+        : 'bg-red-100 dark:bg-red-900/20';
+    }
     if (isCurrent) return 'bg-white dark:bg-slate-800';
     // Use darker green in dark mode
     return status === MinuteStatus.PRODUCTIVE ? 'bg-green-500 dark:bg-green-600' : 'bg-red-500';
@@ -190,7 +195,8 @@ export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, onToggle }) => 
       <div className="mt-6 sm:mt-10 flex flex-wrap justify-center gap-4 sm:gap-8 text-[8px] sm:text-[10px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest border-t border-slate-50 dark:border-slate-800 pt-5">
         <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-green-500 dark:bg-green-600 shadow-sm shadow-green-100 dark:shadow-green-900/10"></div> Productive</div>
         <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-sm shadow-red-100 dark:shadow-red-900/10"></div> Unproductive</div>
-        <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-slate-100 dark:bg-slate-800"></div> Future</div>
+        <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-green-100 dark:bg-green-900/20 border border-green-200 dark:border-green-800"></div> Planned (Prod)</div>
+        <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-red-100 dark:bg-red-900/20 border border-red-200 dark:border-red-800"></div> Planned (Unprod)</div>
       </div>
     </div>
   );

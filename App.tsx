@@ -40,27 +40,36 @@ const App: React.FC = () => {
 
   const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
 
-  const applyModeToFuture = useCallback(async (newMode: MinuteStatus) => {
-    const currentData = dayDataRef.current;
-    if (!currentData) return;
+  const applyModeToFuture = useCallback((newMode: MinuteStatus) => {
+    // Use functional state update to ensure we always work with the latest data,
+    // avoiding stale closures in event callbacks.
+    setDayData(prevData => {
+      if (!prevData) return null;
 
-    const currentIdx = getCurrentMinuteIndex();
-    const newMinutes = [...currentData.minutes];
-    
-    for (let i = currentIdx; i < 1440; i++) {
-      newMinutes[i] = newMode;
-    }
+      const currentIdx = getCurrentMinuteIndex();
+      // Ensure we don't start from an invalid index if called late in day
+      const startIdx = Math.min(Math.max(0, currentIdx), 1439);
+      
+      const newMinutes = [...prevData.minutes];
+      for (let i = startIdx; i < 1440; i++) {
+        newMinutes[i] = newMode;
+      }
 
-    const newData = { ...currentData, minutes: newMinutes };
-    setDayData(newData);
-    await storageService.saveDayData(newData);
-    setLastSaved(new Date());
+      const newData = { ...prevData, minutes: newMinutes };
+      
+      // Save side effect - fire and forget, but using the robust new data
+      storageService.saveDayData(newData).then(() => {
+        setLastSaved(new Date());
+      });
+
+      return newData;
+    });
   }, []);
 
   const handleModeToggle = async (newMode: MinuteStatus) => {
     setDefaultMode(newMode);
     await storageService.setGlobalSetting('default_mode', newMode);
-    await applyModeToFuture(newMode);
+    applyModeToFuture(newMode);
   };
 
   useEffect(() => {
@@ -124,18 +133,25 @@ const App: React.FC = () => {
   }, [currentDate, applyModeToFuture]);
 
   const handleToggleMinute = useCallback(async (index: number) => {
-    if (!dayData) return;
-    const newMinutes = [...dayData.minutes];
-    const currentStatus = newMinutes[index];
-    newMinutes[index] = 
-      currentStatus === MinuteStatus.PRODUCTIVE 
-        ? MinuteStatus.UNPRODUCTIVE 
-        : MinuteStatus.PRODUCTIVE;
-    const newData = { ...dayData, minutes: newMinutes };
-    setDayData(newData);
-    await storageService.saveDayData(newData);
-    setLastSaved(new Date());
-  }, [dayData]);
+    setDayData(prevData => {
+      if (!prevData) return null;
+      
+      const newMinutes = [...prevData.minutes];
+      const currentStatus = newMinutes[index];
+      newMinutes[index] = 
+        currentStatus === MinuteStatus.PRODUCTIVE 
+          ? MinuteStatus.UNPRODUCTIVE 
+          : MinuteStatus.PRODUCTIVE;
+      
+      const newData = { ...prevData, minutes: newMinutes };
+      
+      storageService.saveDayData(newData).then(() => {
+        setLastSaved(new Date());
+      });
+
+      return newData;
+    });
+  }, []);
 
   if (isLoading || !dayData) {
     return (
