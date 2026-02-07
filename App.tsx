@@ -9,7 +9,6 @@ import { StatsDashboard } from './components/StatsDashboard';
 import { supabase } from './services/supabaseClient';
 
 type ToolType = 'pointer' | 'brush-prod' | 'brush-unprod' | 'eraser';
-type SyncStatus = 'synced' | 'saving' | 'error' | 'offline';
 
 const App: React.FC = () => {
   const [currentDate, setCurrentDate] = useState<string>(getTodayKey());
@@ -18,7 +17,6 @@ const App: React.FC = () => {
   const [lastSaved, setLastSaved] = useState<Date>(new Date());
   const [activeTool, setActiveTool] = useState<ToolType>('pointer');
   const [showBulkModal, setShowBulkModal] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>('synced');
   
   // Time State
   const [currentSeconds, setCurrentSeconds] = useState(getCurrentSeconds());
@@ -67,10 +65,6 @@ const App: React.FC = () => {
       const data = await storageService.getDayData(currentDate);
       setDayData(data);
       setIsLoading(false);
-      
-      if (!supabase) {
-        setSyncStatus('offline');
-      }
     };
     init();
 
@@ -93,7 +87,6 @@ const App: React.FC = () => {
               const allLocal = storageService.getLocalAll();
               allLocal[incomingData.date] = incomingData;
               localStorage.setItem('minute_flow_data', JSON.stringify(allLocal));
-              setSyncStatus('synced');
             }
           }
         )
@@ -108,16 +101,8 @@ const App: React.FC = () => {
   // Save Helper
   const persistData = useCallback(async (newData: DayData) => {
     setDayData(newData);
-    
-    // Optimistic UI for saving state
-    if (supabase) setSyncStatus('saving');
-    
-    const success = await storageService.saveDayData(newData);
-    
+    await storageService.saveDayData(newData);
     setLastSaved(new Date());
-    if (supabase) {
-      setSyncStatus(success ? 'synced' : 'error');
-    }
   }, []);
 
   // Interaction: Paint or Toggle
@@ -184,26 +169,6 @@ const App: React.FC = () => {
     setShowBulkModal(false);
   };
 
-  const getSyncStatusColor = () => {
-    switch(syncStatus) {
-      case 'synced': return 'text-green-500';
-      case 'saving': return 'text-blue-500 animate-pulse';
-      case 'error': return 'text-red-500';
-      case 'offline': return 'text-slate-400';
-      default: return 'text-slate-400';
-    }
-  };
-
-  const getSyncStatusText = () => {
-    switch(syncStatus) {
-      case 'synced': return 'Saved';
-      case 'saving': return 'Saving...';
-      case 'error': return 'Sync Failed';
-      case 'offline': return 'Offline';
-      default: return '';
-    }
-  };
-
   if (isLoading || !dayData) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
@@ -234,12 +199,7 @@ const App: React.FC = () => {
             M
           </div>
           <div>
-            <h1 className="text-lg font-bold tracking-tight flex items-center gap-2">
-              Minute Flow
-              <span className={`text-[10px] uppercase font-bold border px-1.5 py-0.5 rounded-md ${getSyncStatusColor()} border-current opacity-70`}>
-                {getSyncStatusText()}
-              </span>
-            </h1>
+            <h1 className="text-lg font-bold tracking-tight">Minute Flow</h1>
             <p className="text-[10px] text-slate-500 uppercase tracking-wider">{currentDate}</p>
           </div>
           <div className="lg:hidden ml-2 text-xl font-black text-slate-900 dark:text-slate-100">{efficiency}%</div>
