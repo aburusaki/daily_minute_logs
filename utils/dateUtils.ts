@@ -5,7 +5,7 @@ export const getTodayKey = (): string => {
 
 export const formatTime = (minuteIndex: number): string => {
   const hours = Math.floor(minuteIndex / 60);
-  const minutes = minuteIndex % 60;
+  const minutes = (minuteIndex % 60) + 1;
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
 };
 

@@ -157,8 +157,8 @@ export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, activeTool, onI
         {/* Header - Aligned with the blocks */}
         <div className="flex mb-1 sm:mb-2 items-center">
           <div className="w-8 xs:w-10 sm:w-16 flex-shrink-0" /> {/* Spacer for hour label */}
-          <div className="flex-1 grid grid-cols-6 gap-[2px] sm:gap-2">
-            {['00', '10', '20', '30', '40', '50'].map(val => (
+          <div className="flex-1 grid grid-cols-3 sm:grid-cols-6 gap-[2px] sm:gap-2">
+            {['1', '2', '3', '4', '5', '6'].map(val => (
               <div key={val} className="text-[7px] xs:text-[9px] sm:text-[10px] text-slate-400 dark:text-slate-600 font-mono font-bold uppercase tracking-widest text-center">
                 {val}
               </div>
@@ -166,7 +166,7 @@ export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, activeTool, onI
           </div>
         </div>
 
-        <div className="space-y-1 sm:space-y-2">
+        <div className="space-y-2 sm:space-y-2">
           {hours.map((chunks, hourIndex) => (
             <div key={hourIndex} className="flex items-center gap-1.5 xs:gap-2 sm:gap-4 group">
               {/* Hour Label */}
@@ -175,7 +175,8 @@ export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, activeTool, onI
               </div>
               
               {/* Hour Grid - 6 blocks of 10 minutes */}
-              <div className="flex-1 grid grid-cols-6 gap-[2px] sm:gap-2 items-center">
+              {/* Mobile: 3 columns (2 rows of 3), Desktop: 6 columns (1 row of 6) */}
+              <div className="flex-1 grid grid-cols-3 sm:grid-cols-6 gap-[2px] sm:gap-2 items-center">
                 {chunks.map((minutes, chunkIndex) => (
                   <div key={chunkIndex} className="grid grid-cols-10 gap-[1px] sm:gap-[1.5px]">
                     {minutes.map((status, minIndex) => {
