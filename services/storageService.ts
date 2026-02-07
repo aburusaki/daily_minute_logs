@@ -1,4 +1,3 @@
-
 import { DayData, MinuteStatus } from '../types';
 import { supabase } from './supabaseClient';
 
@@ -12,7 +11,7 @@ export const storageService = {
   },
 
   // Save both locally and to Supabase
-  saveDayData: async (data: DayData): Promise<void> => {
+  saveDayData: async (data: DayData): Promise<boolean> => {
     const allLocal = storageService.getLocalAll();
     allLocal[data.date] = data;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(allLocal));
@@ -27,11 +26,17 @@ export const storageService = {
             updated_at: new Date().toISOString()
           }, { onConflict: 'date' });
         
-        if (error) console.warn('Supabase sync error:', error.message);
+        if (error) {
+          console.warn('Supabase sync error:', error.message);
+          return false;
+        }
+        return true;
       } catch (e) {
         console.error('Failed to sync with Supabase:', e);
+        return false;
       }
     }
+    return true;
   },
 
   // Fetch from Supabase with fallback to local

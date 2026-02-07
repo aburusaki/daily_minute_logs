@@ -9,6 +9,7 @@ import { StatsDashboard } from './components/StatsDashboard';
 import { supabase } from './services/supabaseClient';
 
 type ToolType = 'pointer' | 'brush-prod' | 'brush-unprod' | 'eraser';
+type SyncStatus = 'synced' | 'saving' | 'error' | 'offline';
 
 const App: React.FC = () => {
   const [currentDate, setCurrentDate] = useState<string>(getTodayKey());
@@ -17,6 +18,7 @@ const App: React.FC = () => {
   const [lastSaved, setLastSaved] = useState<Date>(new Date());
   const [activeTool, setActiveTool] = useState<ToolType>('pointer');
   const [showBulkModal, setShowBulkModal] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('synced');
   
   // Time State
   const [currentSeconds, setCurrentSeconds] = useState(getCurrentSeconds());
@@ -65,6 +67,10 @@ const App: React.FC = () => {
       const data = await storageService.getDayData(currentDate);
       setDayData(data);
       setIsLoading(false);
+      
+      if (!supabase) {
+        setSyncStatus('offline');
+      }
     };
     init();
 
@@ -87,6 +93,7 @@ const App: React.FC = () => {
               const allLocal = storageService.getLocalAll();
               allLocal[incomingData.date] = incomingData;
               localStorage.setItem('minute_flow_data', JSON.stringify(allLocal));
+              setSyncStatus('synced');
             }
           }
         )
@@ -101,8 +108,16 @@ const App: React.FC = () => {
   // Save Helper
   const persistData = useCallback(async (newData: DayData) => {
     setDayData(newData);
-    await storageService.saveDayData(newData);
+    
+    // Optimistic UI for saving state
+    if (supabase) setSyncStatus('saving');
+    
+    const success = await storageService.saveDayData(newData);
+    
     setLastSaved(new Date());
+    if (supabase) {
+      setSyncStatus(success ? 'synced' : 'error');
+    }
   }, []);
 
   // Interaction: Paint or Toggle
@@ -147,14 +162,64 @@ const App: React.FC = () => {
     }
   }, [dayData, persistData]);
 
+  const handleOpenBulkModal = () => {
+    if (!dayData) return;
+
+    // 1. Find last logged minute
+    let lastLoggedIndex = -1;
+    for (let i = dayData.minutes.length - 1; i >= 0; i--) {
+      if (dayData.minutes[i] !== MinuteStatus.FUTURE) {
+        lastLoggedIndex = i;
+        break;
+      }
+    }
+    
+    // Default Start: Minute after the last logged minute + 1 extra minute buffer/shift
+    // Example: Last logged 09:22 (idx 562). 
+    // Old logic: 563 (09:23).
+    // New logic: 564 (09:24).
+    let startIdx = (lastLoggedIndex === -1 ? 0 : lastLoggedIndex + 1) + 1;
+    
+    // 2. Find target End
+    // If today, default to current minute + 1. 
+    // This ensures the current minute is included in the range (since loop is exclusive).
+    const isToday = currentDate === getTodayKey();
+    let endIdx = isToday ? currentMinuteIndex + 1 : 1440;
+
+    // Constraints & Fallbacks
+    if (endIdx < 0) endIdx = 0;
+
+    if (startIdx >= 1440) {
+        // Entire day is logged. Default to standard work hours
+        startIdx = 9 * 60; 
+        endIdx = 17 * 60;
+    } else if (startIdx > endIdx) {
+        // If we are "caught up", default to 1 hour block
+        endIdx = Math.min(1440, startIdx + 60);
+    }
+    
+    const formatIndex = (idx: number) => {
+       // Clamp to 23:59 for display compatibility if it's 24:00 (1440) or greater
+       if (idx >= 1440) return "23:59";
+       const h = Math.floor(idx / 60);
+       const m = idx % 60;
+       return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+    };
+
+    setBulkStart(formatIndex(startIdx));
+    setBulkEnd(formatIndex(endIdx));
+    setShowBulkModal(true);
+  };
+
   const applyBulkEdit = () => {
     if (!dayData) return;
     const [startH, startM] = bulkStart.split(':').map(Number);
     const [endH, endM] = bulkEnd.split(':').map(Number);
     
     const startIndex = startH * 60 + startM;
-    const endIndex = endH * 60 + endM;
+    let endIndex = endH * 60 + endM;
 
+    // Standard exclusive logic for range
     if (startIndex > endIndex) {
       alert("Start time must be before end time");
       return;
@@ -162,11 +227,33 @@ const App: React.FC = () => {
 
     const newMinutes = [...dayData.minutes];
     for (let i = startIndex; i < endIndex; i++) {
-      newMinutes[i] = bulkAction;
+      if (i < 1440) {
+        newMinutes[i] = bulkAction;
+      }
     }
 
     persistData({ ...dayData, minutes: newMinutes });
     setShowBulkModal(false);
+  };
+
+  const getSyncStatusColor = () => {
+    switch(syncStatus) {
+      case 'synced': return 'text-green-500';
+      case 'saving': return 'text-blue-500 animate-pulse';
+      case 'error': return 'text-red-500';
+      case 'offline': return 'text-slate-400';
+      default: return 'text-slate-400';
+    }
+  };
+
+  const getSyncStatusText = () => {
+    switch(syncStatus) {
+      case 'synced': return 'Saved';
+      case 'saving': return 'Saving...';
+      case 'error': return 'Sync Failed';
+      case 'offline': return 'Offline';
+      default: return '';
+    }
   };
 
   if (isLoading || !dayData) {
@@ -199,7 +286,12 @@ const App: React.FC = () => {
             M
           </div>
           <div>
-            <h1 className="text-lg font-bold tracking-tight">Minute Flow</h1>
+            <h1 className="text-lg font-bold tracking-tight flex items-center gap-2">
+              Minute Flow
+              <span className={`text-[10px] uppercase font-bold border px-1.5 py-0.5 rounded-md ${getSyncStatusColor()} border-current opacity-70`}>
+                {getSyncStatusText()}
+              </span>
+            </h1>
             <p className="text-[10px] text-slate-500 uppercase tracking-wider">{currentDate}</p>
           </div>
           <div className="lg:hidden ml-2 text-xl font-black text-slate-900 dark:text-slate-100">{efficiency}%</div>
@@ -263,7 +355,7 @@ const App: React.FC = () => {
                   className="bg-slate-100 dark:bg-slate-800 border-none rounded-xl text-xs sm:text-sm font-semibold px-2 sm:px-3 py-2 text-center w-auto cursor-pointer max-w-[120px]"
                 />
                 <button 
-                  onClick={() => setShowBulkModal(true)}
+                  onClick={handleOpenBulkModal}
                   className="px-3 sm:px-4 py-2 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold rounded-xl whitespace-nowrap hover:opacity-90"
                 >
                   Range
