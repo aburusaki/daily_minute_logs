@@ -307,52 +307,77 @@ const App: React.FC = () => {
       <div className="sticky top-0 z-50 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm border-b border-slate-200 dark:border-slate-800 shadow-sm px-4 sm:px-6 py-2 transition-colors duration-300">
         <div className="flex flex-col lg:flex-row items-center gap-2 lg:justify-between">
           
-          {/* Row 1 (Mobile): Tools */}
-          <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner overflow-x-auto no-scrollbar w-full lg:w-auto">
-            <button 
-              onClick={() => setActiveTool('pointer')}
-              className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTool === 'pointer' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500'}`}
-            >
-              <span>👆</span> Toggle
-            </button>
-            <div className="w-px h-4 bg-slate-300 dark:bg-slate-600 mx-1"></div>
-            <button 
-              onClick={() => setActiveTool('brush-prod')}
-              className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTool === 'brush-prod' ? 'bg-green-500 text-white shadow-sm' : 'text-slate-500 hover:text-green-600'}`}
-            >
-              <span>🖌️</span> Focus
-            </button>
-            <button 
-              onClick={() => setActiveTool('brush-unprod')}
-              className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTool === 'brush-unprod' ? 'bg-red-500 text-white shadow-sm' : 'text-slate-500 hover:text-red-500'}`}
-            >
-              <span>🖌️</span> Break
-            </button>
-            <button 
-              onClick={() => setActiveTool('eraser')}
-              className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTool === 'eraser' ? 'bg-slate-300 dark:bg-slate-600 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500'}`}
-            >
-              <span>🧹</span> Clear
-            </button>
+          {/* Row 1 (Mobile): Date Picker + Tools */}
+          <div className="flex items-center w-full lg:w-auto gap-2">
+            {/* Mobile Date Picker */}
+            <input 
+              type="date" 
+              value={currentDate}
+              onChange={(e) => setCurrentDate(e.target.value)}
+              className="lg:hidden h-10 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold px-2 text-center cursor-pointer shadow-sm outline-none focus:ring-2 focus:ring-slate-400 dark:focus:ring-slate-500"
+            />
+            
+            {/* Tools Group */}
+            <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner overflow-x-auto no-scrollbar flex-1 lg:flex-none">
+              <button 
+                onClick={() => setActiveTool('pointer')}
+                className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTool === 'pointer' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500'}`}
+              >
+                <span>👆</span> Toggle
+              </button>
+              <div className="w-px h-4 bg-slate-300 dark:bg-slate-600 mx-1"></div>
+              <button 
+                onClick={() => setActiveTool('brush-prod')}
+                className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTool === 'brush-prod' ? 'bg-green-500 text-white shadow-sm' : 'text-slate-500 hover:text-green-600'}`}
+              >
+                <span>🖌️</span> Focus
+              </button>
+              <button 
+                onClick={() => setActiveTool('brush-unprod')}
+                className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTool === 'brush-unprod' ? 'bg-red-500 text-white shadow-sm' : 'text-slate-500 hover:text-red-500'}`}
+              >
+                <span>🖌️</span> Break
+              </button>
+              <button 
+                onClick={() => setActiveTool('eraser')}
+                className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTool === 'eraser' ? 'bg-slate-300 dark:bg-slate-600 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500'}`}
+              >
+                <span>🧹</span> Clear
+              </button>
+            </div>
           </div>
 
           {/* Row 2 (Mobile): Current Minute + Calendar/Range/Theme */}
           <div className="flex items-center w-full lg:w-auto gap-2 justify-between lg:justify-end">
-             <div className="flex-shrink-0">
+             <div className="flex items-center flex-shrink-0 gap-2">
                <CurrentMinuteProgress 
                   dayData={dayData} 
                   currentSeconds={currentSeconds} 
                   currentMinuteIndex={isToday ? currentMinuteIndex : -1} 
                   compact={true} 
                />
+               
+               {/* Daily Unproductive Counter */}
+               <div className="flex flex-col justify-center items-center bg-slate-50 dark:bg-slate-800 px-3 py-1 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm min-w-[70px] h-[42px]">
+                 <span className="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase leading-none mb-0.5">
+                   Breaks
+                 </span>
+                 <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full bg-red-500 shadow-sm shadow-red-500/50"></div>
+                    <span className="text-sm font-black text-slate-900 dark:text-white leading-none">
+                      {unproductiveCount}
+                    </span>
+                 </div>
+               </div>
              </div>
              
-             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar justify-end flex-1">
+             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar justify-end flex-1 pl-2">
+                {/* Desktop Date Picker */}
                 <input 
                   type="date" 
                   value={currentDate}
                   onChange={(e) => setCurrentDate(e.target.value)}
-                  className="bg-slate-100 dark:bg-slate-800 border-none rounded-xl text-xs sm:text-sm font-semibold px-2 sm:px-3 py-2 text-center w-auto cursor-pointer max-w-[120px]"
+                  className="hidden lg:block bg-slate-100 dark:bg-slate-800 border-none rounded-xl text-xs sm:text-sm font-semibold px-2 sm:px-3 py-2 text-center w-auto cursor-pointer max-w-[120px]"
                 />
                 <button 
                   onClick={handleOpenBulkModal}
