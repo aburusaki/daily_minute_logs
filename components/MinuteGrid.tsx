@@ -158,7 +158,7 @@ export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, activeTool, onI
         <div className="flex mb-1 sm:mb-2 items-center">
           <div className="w-8 xs:w-10 sm:w-16 flex-shrink-0" /> {/* Spacer for hour label */}
           <div className="flex-1 grid grid-cols-3 sm:grid-cols-6 gap-[2px] sm:gap-2">
-            {['1', '2', '3', '4', '5', '6'].map(val => (
+            {['00', '10', '20', '30', '40', '50'].map(val => (
               <div key={val} className="text-[7px] xs:text-[9px] sm:text-[10px] text-slate-400 dark:text-slate-600 font-mono font-bold uppercase tracking-widest text-center">
                 {val}
               </div>

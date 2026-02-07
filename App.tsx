@@ -202,7 +202,18 @@ const App: React.FC = () => {
             <p className="text-[10px] text-slate-500 uppercase tracking-wider">{currentDate}</p>
           </div>
           <div className="flex-1 lg:hidden"></div>
-          <div className="lg:hidden text-2xl font-black text-slate-900 dark:text-slate-100">{efficiency}%</div>
+          {/* Mobile Efficiency hidden here if showing chart later, but keeping for now */}
+          <div className="lg:hidden text-xl font-black text-slate-900 dark:text-slate-100">{efficiency}%</div>
+        </div>
+
+        {/* Current Minute Progress - Sticky in Header */}
+        <div className="w-full lg:w-auto flex justify-center order-last lg:order-none">
+          <CurrentMinuteProgress 
+            dayData={dayData} 
+            currentSeconds={currentSeconds} 
+            currentMinuteIndex={isToday ? currentMinuteIndex : -1} 
+            compact={true} 
+          />
         </div>
 
         <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner overflow-x-auto no-scrollbar w-full lg:w-auto">
@@ -289,9 +300,7 @@ const App: React.FC = () => {
           </div>
         )}
 
-        <section className="flex justify-center">
-          <CurrentMinuteProgress dayData={dayData} currentSeconds={currentSeconds} currentMinuteIndex={currentMinuteIndex} />
-        </section>
+        {/* Removed CurrentMinuteProgress from main since it's now in header */}
 
         <section>
           <div className="flex items-center justify-between mb-2">
