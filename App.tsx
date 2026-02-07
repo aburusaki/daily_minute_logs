@@ -2,28 +2,31 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { DayData, MinuteStatus } from './types';
 import { storageService } from './services/storageService';
-import { getTodayKey, getCurrentMinuteIndex } from './utils/dateUtils';
+import { getTodayKey } from './utils/dateUtils';
 import { MinuteGrid } from './components/MinuteGrid';
-import { CurrentMinuteProgress } from './components/CurrentMinuteProgress';
 import { StatsDashboard } from './components/StatsDashboard';
 import { supabase } from './services/supabaseClient';
+
+type ToolType = 'pointer' | 'brush-prod' | 'brush-unprod' | 'eraser';
 
 const App: React.FC = () => {
   const [currentDate, setCurrentDate] = useState<string>(getTodayKey());
   const [dayData, setDayData] = useState<DayData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [lastSaved, setLastSaved] = useState<Date>(new Date());
-  const [defaultMode, setDefaultMode] = useState<MinuteStatus>(MinuteStatus.PRODUCTIVE);
+  const [activeTool, setActiveTool] = useState<ToolType>('pointer');
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  
+  // Bulk Edit State
+  const [bulkStart, setBulkStart] = useState("09:00");
+  const [bulkEnd, setBulkEnd] = useState("17:00");
+  const [bulkAction, setBulkAction] = useState<MinuteStatus>(MinuteStatus.PRODUCTIVE);
+
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const saved = localStorage.getItem('theme');
     return (saved as 'light' | 'dark') || 'dark';
   });
   
-  const dayDataRef = useRef<DayData | null>(null);
-  useEffect(() => {
-    dayDataRef.current = dayData;
-  }, [dayData]);
-
   const currentDateRef = useRef(currentDate);
   useEffect(() => {
     currentDateRef.current = currentDate;
@@ -40,69 +43,22 @@ const App: React.FC = () => {
 
   const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
 
-  const applyModeToFuture = useCallback((newMode: MinuteStatus) => {
-    // Use functional state update to ensure we always work with the latest data,
-    // avoiding stale closures in event callbacks.
-    setDayData(prevData => {
-      if (!prevData) return null;
-
-      const currentIdx = getCurrentMinuteIndex();
-      // Ensure we don't start from an invalid index if called late in day
-      const startIdx = Math.min(Math.max(0, currentIdx), 1439);
-      
-      const newMinutes = [...prevData.minutes];
-      for (let i = startIdx; i < 1440; i++) {
-        newMinutes[i] = newMode;
-      }
-
-      const newData = { ...prevData, minutes: newMinutes };
-      
-      // Save side effect - fire and forget, but using the robust new data
-      storageService.saveDayData(newData).then(() => {
-        setLastSaved(new Date());
-      });
-
-      return newData;
-    });
-  }, []);
-
-  const handleModeToggle = async (newMode: MinuteStatus) => {
-    setDefaultMode(newMode);
-    await storageService.setGlobalSetting('default_mode', newMode);
-    applyModeToFuture(newMode);
-  };
-
+  // Initial Data Load
   useEffect(() => {
     const init = async () => {
       setIsLoading(true);
+      // When getting data, if it's a new day, it defaults to FUTURE (Empty) via storageService
       const data = await storageService.getDayData(currentDate);
+      
+      // If the data returned has 'FUTURE' status, it will render as empty gray dots.
+      // If it was a legacy day with old data, it preserves it.
       setDayData(data);
-      const remoteMode = await storageService.getGlobalSetting('default_mode');
-      if (remoteMode) setDefaultMode(remoteMode as MinuteStatus);
       setIsLoading(false);
     };
     init();
 
     const supabaseInstance = supabase;
     if (supabaseInstance) {
-      const settingsChannel = supabaseInstance
-        .channel(`settings_changes_${currentDate}`)
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'app_settings' },
-          (payload) => {
-            const newData = payload.new as { key?: string; value?: string };
-            if (newData && newData.key === 'default_mode') {
-              const newMode = newData.value as MinuteStatus;
-              if (newMode && Object.values(MinuteStatus).includes(newMode)) {
-                setDefaultMode(newMode);
-                applyModeToFuture(newMode);
-              }
-            }
-          }
-        )
-        .subscribe();
-
       const dataChannel = supabaseInstance
         .channel(`day_logs_realtime_${currentDate}`)
         .on(
@@ -126,191 +82,264 @@ const App: React.FC = () => {
         .subscribe();
 
       return () => {
-        supabaseInstance.removeChannel(settingsChannel);
         supabaseInstance.removeChannel(dataChannel);
       };
     }
-  }, [currentDate, applyModeToFuture]);
+  }, [currentDate]);
 
-  const handleToggleMinute = useCallback(async (index: number) => {
+  // Save Helper
+  const persistData = useCallback(async (newData: DayData) => {
+    setDayData(newData);
+    await storageService.saveDayData(newData);
+    setLastSaved(new Date());
+  }, []);
+
+  // Interaction: Paint or Toggle
+  const handleInteraction = useCallback((index: number, isDragging: boolean) => {
     setDayData(prevData => {
       if (!prevData) return null;
       
       const newMinutes = [...prevData.minutes];
-      const currentStatus = newMinutes[index];
-      newMinutes[index] = 
-        currentStatus === MinuteStatus.PRODUCTIVE 
-          ? MinuteStatus.UNPRODUCTIVE 
-          : MinuteStatus.PRODUCTIVE;
-      
-      const newData = { ...prevData, minutes: newMinutes };
-      
-      storageService.saveDayData(newData).then(() => {
-        setLastSaved(new Date());
-      });
+      let hasChanged = false;
 
-      return newData;
+      if (activeTool === 'pointer') {
+        // Pointer only works on click (not drag) to toggle
+        if (!isDragging) {
+          const current = newMinutes[index];
+          // Cycle: Future -> Productive -> Unproductive -> Future
+          if (current === MinuteStatus.FUTURE) newMinutes[index] = MinuteStatus.PRODUCTIVE;
+          else if (current === MinuteStatus.PRODUCTIVE) newMinutes[index] = MinuteStatus.UNPRODUCTIVE;
+          else newMinutes[index] = MinuteStatus.FUTURE;
+          hasChanged = true;
+        }
+      } else {
+        // Brush tools work on click and drag
+        const targetStatus = 
+          activeTool === 'brush-prod' ? MinuteStatus.PRODUCTIVE :
+          activeTool === 'brush-unprod' ? MinuteStatus.UNPRODUCTIVE :
+          MinuteStatus.FUTURE; // Eraser
+
+        if (newMinutes[index] !== targetStatus) {
+          newMinutes[index] = targetStatus;
+          hasChanged = true;
+        }
+      }
+
+      if (hasChanged) {
+        return { ...prevData, minutes: newMinutes };
+      }
+      return prevData;
     });
-  }, []);
+  }, [activeTool]);
+
+  // Finalize interaction (Mouse Up) - Persist to DB
+  const handleInteractionEnd = useCallback(() => {
+    if (dayData) {
+      persistData(dayData);
+    }
+  }, [dayData, persistData]);
+
+  // Bulk Edit Handler
+  const applyBulkEdit = () => {
+    if (!dayData) return;
+
+    const [startH, startM] = bulkStart.split(':').map(Number);
+    const [endH, endM] = bulkEnd.split(':').map(Number);
+    
+    const startIndex = startH * 60 + startM;
+    const endIndex = endH * 60 + endM;
+
+    if (startIndex > endIndex) {
+      alert("Start time must be before end time");
+      return;
+    }
+
+    const newMinutes = [...dayData.minutes];
+    for (let i = startIndex; i < endIndex; i++) {
+      newMinutes[i] = bulkAction;
+    }
+
+    persistData({ ...dayData, minutes: newMinutes });
+    setShowBulkModal(false);
+  };
 
   if (isLoading || !dayData) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-green-600 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-slate-500 dark:text-slate-400 font-medium animate-pulse">Connecting to your flow...</p>
+          <div className="w-12 h-12 border-4 border-slate-300 border-t-slate-900 dark:border-slate-700 dark:border-t-slate-100 rounded-full animate-spin"></div>
         </div>
       </div>
     );
   }
 
-  // --- Date-Aware Stats Calculation ---
-  const today = getTodayKey();
-  const currentMinIndex = getCurrentMinuteIndex();
+  // --- Stats Calculation (Manual Only) ---
+  // Only count minutes that are NOT 'FUTURE' (Unlogged)
+  const loggedMinutes = dayData.minutes.filter(m => m !== MinuteStatus.FUTURE);
+  const totalLogged = loggedMinutes.length;
+  const productiveCount = loggedMinutes.filter(m => m === MinuteStatus.PRODUCTIVE).length;
+  const unproductiveCount = loggedMinutes.filter(m => m === MinuteStatus.UNPRODUCTIVE).length;
   
-  let statsEndIndex = 0;
-  let remainingMinutes = 0;
-  
-  if (currentDate < today) {
-    statsEndIndex = 1440; // Full day in the past
-    remainingMinutes = 0;
-  } else if (currentDate === today) {
-    statsEndIndex = currentMinIndex; // Only up to now for today
-    remainingMinutes = 1440 - currentMinIndex;
-  } else {
-    statsEndIndex = 0; // Nothing happened in the future
-    remainingMinutes = 1440;
-  }
-
-  const productiveCount = dayData.minutes.slice(0, statsEndIndex).filter(m => m === MinuteStatus.PRODUCTIVE).length;
-  const unproductiveCount = dayData.minutes.slice(0, statsEndIndex).filter(m => m === MinuteStatus.UNPRODUCTIVE).length;
-  const score = statsEndIndex > 0 ? Math.round((productiveCount / statsEndIndex) * 100) : 100;
+  // If nothing is logged, efficiency is 100% (innocent until proven guilty) or 0? 
+  // Let's go with - (empty) representation or 0.
+  const efficiency = totalLogged > 0 ? Math.round((productiveCount / totalLogged) * 100) : 0;
   // -------------------------------------
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 pb-20 transition-colors duration-300">
-      <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-4 flex flex-col lg:flex-row justify-between items-center gap-4">
-        <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-start">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-green-600 rounded-lg flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-green-200 dark:shadow-green-900/20">
-              M
-            </div>
-            <div>
-              <h1 className="text-lg sm:text-xl font-bold tracking-tight">Minute Flow</h1>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium uppercase tracking-wider">Synced at {lastSaved.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-            </div>
+      
+      {/* Header */}
+      <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-4 flex flex-col lg:flex-row justify-between items-center gap-4 sticky top-0 z-50 shadow-sm">
+        <div className="flex items-center gap-4 w-full lg:w-auto">
+          <div className="w-10 h-10 bg-slate-900 dark:bg-slate-100 rounded-lg flex items-center justify-center text-white dark:text-slate-900 font-bold text-xl">
+            M
           </div>
-          <div className="lg:hidden flex items-center gap-4">
-             <button onClick={toggleTheme} className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors">
-               {theme === 'light' ? '🌙' : '☀️'}
-             </button>
-             <div className="text-2xl font-black text-green-600">{score}%</div>
+          <div>
+            <h1 className="text-lg font-bold tracking-tight">Minute Flow</h1>
+            <p className="text-[10px] text-slate-500 uppercase tracking-wider">{currentDate}</p>
           </div>
+          <div className="flex-1 lg:hidden"></div>
+          <div className="lg:hidden text-2xl font-black text-slate-900 dark:text-slate-100">{efficiency}%</div>
         </div>
 
-        <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl shadow-inner border border-slate-200 dark:border-slate-700 w-full lg:w-auto overflow-x-auto no-scrollbar">
+        {/* Tools */}
+        <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner overflow-x-auto no-scrollbar w-full lg:w-auto">
           <button 
-            onClick={() => handleModeToggle(MinuteStatus.PRODUCTIVE)}
-            className={`flex-1 lg:flex-none whitespace-nowrap px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${defaultMode === MinuteStatus.PRODUCTIVE ? 'bg-green-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'}`}
+            onClick={() => setActiveTool('pointer')}
+            className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTool === 'pointer' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500'}`}
           >
-            Stay Productive
+            <span>👆</span> Toggle
+          </button>
+          <div className="w-px h-4 bg-slate-300 dark:bg-slate-600 mx-1"></div>
+          <button 
+            onClick={() => setActiveTool('brush-prod')}
+            className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTool === 'brush-prod' ? 'bg-green-500 text-white shadow-sm' : 'text-slate-500 hover:text-green-600'}`}
+          >
+            <span>🖌️</span> Focus
           </button>
           <button 
-            onClick={() => handleModeToggle(MinuteStatus.UNPRODUCTIVE)}
-            className={`flex-1 lg:flex-none whitespace-nowrap px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${defaultMode === MinuteStatus.UNPRODUCTIVE ? 'bg-red-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'}`}
+            onClick={() => setActiveTool('brush-unprod')}
+            className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTool === 'brush-unprod' ? 'bg-red-500 text-white shadow-sm' : 'text-slate-500 hover:text-red-500'}`}
           >
-            Taking a Break
+            <span>🖌️</span> Break
+          </button>
+          <button 
+            onClick={() => setActiveTool('eraser')}
+            className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTool === 'eraser' ? 'bg-slate-300 dark:bg-slate-600 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500'}`}
+          >
+            <span>🧹</span> Clear
           </button>
         </div>
 
-        <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl w-full lg:w-auto border border-slate-200 dark:border-slate-700">
+        {/* Date & Bulk */}
+        <div className="flex items-center gap-2 w-full lg:w-auto">
           <input 
             type="date" 
             value={currentDate}
             onChange={(e) => setCurrentDate(e.target.value)}
-            className="w-full bg-transparent border-none text-sm font-semibold px-3 py-1.5 focus:ring-0 cursor-pointer text-center lg:text-left dark:text-slate-200"
+            className="bg-slate-100 dark:bg-slate-800 border-none rounded-xl text-sm font-semibold px-3 py-2 text-center w-full lg:w-auto cursor-pointer"
           />
+          <button 
+            onClick={() => setShowBulkModal(true)}
+            className="px-4 py-2 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold rounded-xl whitespace-nowrap hover:opacity-90"
+          >
+            Range
+          </button>
+          <button onClick={toggleTheme} className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500">
+             {theme === 'light' ? '🌙' : '☀️'}
+          </button>
         </div>
 
-        <div className="hidden lg:flex items-center gap-6">
-          <button onClick={toggleTheme} className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-slate-500 dark:text-slate-400">
-            {theme === 'light' ? (
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-              </svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 2a1 1 0 011-1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4.243 4.757a1 1 0 010 1.414l-1.414 1.414a1 1 0 01-1.414-1.414l1.414-1.414a1 1 0 011.414 0zm-9.193 1.414a1 1 0 01-1.414-1.414l1.414-1.414a1 1 0 011.414 1.414L5.05 8.171zM8 11a3 3 0 116 0 3 3 0 01-6 0zm6 0a6 6 0 11-12 0 6 6 0 0112 0zm3.193-4.243a1 1 0 011.414 0l1.414 1.414a1 1 0 01-1.414 1.414l-1.414-1.414a1 1 0 010-1.414zm-1.414 9.193a1 1 0 011.414 0l1.414 1.414a1 1 0 01-1.414 1.414l-1.414-1.414a1 1 0 010-1.414zm-9.193 1.414a1 1 0 01-1.414-1.414l-1.414-1.414a1 1 0 011.414-1.414l1.414 1.414a1 1 0 010 1.414zM2 11a1 1 0 011-1h1a1 1 0 110 2H3a1 1 0 01-1-1zm14 0a1 1 0 011-1h1a1 1 0 110 2h-1a1 1 0 01-1-1z" clipRule="evenodd" />
-              </svg>
-            )}
-          </button>
-          <div className="text-right">
-            <div className="text-2xl font-black text-green-600">{score}%</div>
-            <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Efficiency</div>
-          </div>
+        <div className="hidden lg:block text-right">
+          <div className="text-3xl font-black text-slate-900 dark:text-slate-100">{efficiency}%</div>
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Efficiency</div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
-        <section className="flex justify-center">
-          <CurrentMinuteProgress dayData={dayData} />
-        </section>
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+        
+        {/* Bulk Edit Modal */}
+        {showBulkModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md p-6 border border-slate-200 dark:border-slate-800">
+              <h2 className="text-xl font-bold mb-4 dark:text-white">Bulk Edit Range</h2>
+              
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase">From</label>
+                  <input type="time" value={bulkStart} onChange={e => setBulkStart(e.target.value)} className="w-full mt-1 p-2 bg-slate-100 dark:bg-slate-800 rounded-lg border-none" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase">To</label>
+                  <input type="time" value={bulkEnd} onChange={e => setBulkEnd(e.target.value)} className="w-full mt-1 p-2 bg-slate-100 dark:bg-slate-800 rounded-lg border-none" />
+                </div>
+              </div>
 
-        <section>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-md sm:text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-600" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-              </svg>
-              Daily Flow Map
-            </h2>
-            <div className="hidden sm:flex gap-4 text-xs font-medium text-slate-500 dark:text-slate-400">
-              <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-green-500 rounded-full"></div> Productive</div>
-              <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-red-500 rounded-full"></div> Unproductive</div>
-              <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-slate-100 dark:bg-slate-800 rounded-full"></div> Future</div>
+              <div className="mb-6">
+                <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Set Status To</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button onClick={() => setBulkAction(MinuteStatus.PRODUCTIVE)} className={`p-3 rounded-xl text-sm font-bold border-2 ${bulkAction === MinuteStatus.PRODUCTIVE ? 'border-green-500 bg-green-50 dark:bg-green-900/20 text-green-600' : 'border-slate-200 dark:border-slate-700 text-slate-500'}`}>Productive</button>
+                  <button onClick={() => setBulkAction(MinuteStatus.UNPRODUCTIVE)} className={`p-3 rounded-xl text-sm font-bold border-2 ${bulkAction === MinuteStatus.UNPRODUCTIVE ? 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-500' : 'border-slate-200 dark:border-slate-700 text-slate-500'}`}>Break</button>
+                  <button onClick={() => setBulkAction(MinuteStatus.FUTURE)} className={`p-3 rounded-xl text-sm font-bold border-2 ${bulkAction === MinuteStatus.FUTURE ? 'border-slate-500 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300' : 'border-slate-200 dark:border-slate-700 text-slate-500'}`}>Clear</button>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button onClick={() => setShowBulkModal(false)} className="flex-1 py-3 text-sm font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors">Cancel</button>
+                <button onClick={applyBulkEdit} className="flex-1 py-3 text-sm font-bold bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 rounded-xl shadow-lg hover:opacity-90 transition-opacity">Apply</button>
+              </div>
             </div>
           </div>
-          <MinuteGrid dayData={dayData} onToggle={handleToggleMinute} />
+        )}
+
+        {/* Grid Section */}
+        <section>
+          <div className="flex items-center justify-between mb-2">
+             <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+               {activeTool === 'pointer' ? 'Click to toggle' : 'Click & Drag to paint'}
+             </div>
+             <div className="flex gap-3 text-[10px] font-bold uppercase text-slate-400">
+               <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-green-500"></div> Work</span>
+               <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500"></div> Break</span>
+               <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-slate-200 dark:bg-slate-800"></div> Empty</span>
+             </div>
+          </div>
+          
+          <div className={`transition-all duration-200 ${activeTool !== 'pointer' ? 'cursor-crosshair' : 'cursor-default'}`}>
+            <MinuteGrid 
+              dayData={dayData} 
+              activeTool={activeTool}
+              onInteract={handleInteraction}
+              onInteractEnd={handleInteractionEnd}
+            />
+          </div>
         </section>
 
+        {/* Stats Cards */}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          <div className="bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors duration-300">
-            <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1">Productive</div>
-            <div className="text-xl sm:text-2xl font-black text-green-600">{productiveCount} <span className="text-xs sm:text-sm font-medium text-slate-400 dark:text-slate-500">min</span></div>
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Productive</div>
+            <div className="text-2xl font-black text-green-600">{productiveCount} <span className="text-sm text-slate-400 font-medium">min</span></div>
           </div>
-          <div className="bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors duration-300">
-            <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1">Unproductive</div>
-            <div className="text-xl sm:text-2xl font-black text-red-500">{unproductiveCount} <span className="text-xs sm:text-sm font-medium text-slate-400 dark:text-slate-500">min</span></div>
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Unproductive</div>
+            <div className="text-2xl font-black text-red-500">{unproductiveCount} <span className="text-sm text-slate-400 font-medium">min</span></div>
           </div>
-          <div className="bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors duration-300">
-            <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1">Remaining</div>
-            <div className="text-xl sm:text-2xl font-black text-slate-800 dark:text-slate-200">{remainingMinutes} <span className="text-xs sm:text-sm font-medium text-slate-400 dark:text-slate-500">min</span></div>
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Total Logged</div>
+            <div className="text-2xl font-black text-slate-800 dark:text-slate-100">{totalLogged} <span className="text-sm text-slate-400 font-medium">min</span></div>
           </div>
-          <div className="bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors duration-300">
-            <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-1">Mode</div>
-            <div className={`text-sm sm:text-lg font-bold flex items-center gap-2 ${defaultMode === MinuteStatus.PRODUCTIVE ? 'text-green-600' : 'text-red-500'}`}>
-              <div className={`w-2 h-2 rounded-full animate-pulse ${defaultMode === MinuteStatus.PRODUCTIVE ? 'bg-green-600' : 'bg-red-500'}`}></div>
-              {defaultMode === MinuteStatus.PRODUCTIVE ? 'Work' : 'Break'}
-            </div>
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Unlogged</div>
+            <div className="text-2xl font-black text-slate-300 dark:text-slate-700">{1440 - totalLogged} <span className="text-sm text-slate-400 font-medium">min</span></div>
           </div>
         </section>
 
         <section>
-          <h2 className="text-md sm:text-lg font-bold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-indigo-600 dark:text-indigo-400" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
-            </svg>
-            Performance Analytics
-          </h2>
           <StatsDashboard dayData={dayData} />
         </section>
       </main>
-
-      <footer className="fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-6 py-3 z-40 flex justify-center items-center lg:hidden transition-colors duration-300">
-        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center gap-2">
-          Efficiency: <span className="text-green-600 text-sm">{score}%</span>
-        </div>
-      </footer>
     </div>
   );
 };

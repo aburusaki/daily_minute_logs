@@ -12,7 +12,6 @@ export const CurrentMinuteProgress: React.FC<CurrentMinuteProgressProps> = ({ da
   const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains('dark'));
   const currentIndex = getCurrentMinuteIndex();
   const currentStatus = dayData.minutes[currentIndex];
-  const isProductive = currentStatus === MinuteStatus.PRODUCTIVE;
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -29,8 +28,27 @@ export const CurrentMinuteProgress: React.FC<CurrentMinuteProgressProps> = ({ da
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (seconds / 60) * circumference;
 
-  // Use a darker green (#16a34a) in dark mode
-  const productiveColor = isDarkMode ? '#16a34a' : '#22c55e';
+  // Determine colors based on status
+  const getStrokeColor = () => {
+    if (currentStatus === MinuteStatus.PRODUCTIVE) {
+      return isDarkMode ? '#16a34a' : '#22c55e'; // Green 600/500
+    }
+    if (currentStatus === MinuteStatus.UNPRODUCTIVE) {
+      return '#ef4444'; // Red 500
+    }
+    // Default/Future/Empty
+    return isDarkMode ? '#334155' : '#cbd5e1'; // Slate 700/300
+  };
+
+  const getTextColor = () => {
+    if (currentStatus === MinuteStatus.PRODUCTIVE) {
+      return isDarkMode ? 'text-green-600' : 'text-green-600';
+    }
+    if (currentStatus === MinuteStatus.UNPRODUCTIVE) {
+      return 'text-red-500';
+    }
+    return 'text-slate-400 dark:text-slate-500';
+  };
 
   return (
     <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col items-center justify-center min-w-[160px] transition-colors duration-300">
@@ -52,7 +70,7 @@ export const CurrentMinuteProgress: React.FC<CurrentMinuteProgressProps> = ({ da
             cy={size / 2}
             r={radius}
             fill="transparent"
-            stroke={isProductive ? productiveColor : '#ef4444'}
+            stroke={getStrokeColor()}
             strokeWidth={strokeWidth}
             strokeDasharray={circumference}
             strokeDashoffset={offset}
@@ -74,7 +92,7 @@ export const CurrentMinuteProgress: React.FC<CurrentMinuteProgressProps> = ({ da
         <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
           Current Minute
         </div>
-        <div className={`text-sm font-black ${isProductive ? (isDarkMode ? 'text-green-600' : 'text-green-600') : 'text-red-500'}`}>
+        <div className={`text-sm font-black ${getTextColor()}`}>
           {formatTime(currentIndex)}
         </div>
       </div>

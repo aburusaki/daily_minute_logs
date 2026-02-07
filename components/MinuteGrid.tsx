@@ -1,121 +1,90 @@
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { MinuteStatus, DayData } from '../types';
-import { isFutureMinute, isCurrentMinute, getCurrentSeconds, formatTime } from '../utils/dateUtils';
+import { formatTime } from '../utils/dateUtils';
 
 interface MinuteGridProps {
   dayData: DayData;
-  onToggle: (index: number) => void;
+  activeTool: string;
+  onInteract: (index: number, isDragging: boolean) => void;
+  onInteractEnd: () => void;
 }
 
 const MinuteCell = React.memo(({ 
   index, 
   status, 
-  isFuture, 
-  isCurrent,
-  currentSeconds,
   isDarkMode,
-  onToggle, 
+  activeTool,
+  onMouseDown, 
   onMouseEnter 
 }: { 
   index: number; 
   status: MinuteStatus; 
-  isFuture: boolean; 
-  isCurrent: boolean;
-  currentSeconds: number;
   isDarkMode: boolean;
-  onToggle: (index: number) => void;
+  activeTool: string;
+  onMouseDown: (index: number) => void;
   onMouseEnter: (index: number) => void;
 }) => {
   const getBgColor = () => {
-    if (isFuture) {
-      // Show faint color for future to indicate the plan
-      return status === MinuteStatus.PRODUCTIVE 
-        ? 'bg-green-100 dark:bg-green-900/20' 
-        : 'bg-red-100 dark:bg-red-900/20';
+    switch (status) {
+      case MinuteStatus.PRODUCTIVE:
+        return 'bg-green-500 dark:bg-green-600 shadow-sm shadow-green-200 dark:shadow-green-900/20';
+      case MinuteStatus.UNPRODUCTIVE:
+        return 'bg-red-500 shadow-sm shadow-red-200 dark:shadow-red-900/20';
+      case MinuteStatus.FUTURE:
+      default:
+        return 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700';
     }
-    if (isCurrent) return 'bg-white dark:bg-slate-800';
-    // Use darker green in dark mode
-    return status === MinuteStatus.PRODUCTIVE ? 'bg-green-500 dark:bg-green-600' : 'bg-red-500';
   };
 
-  if (isCurrent) {
-    const radius = 8;
-    const circumference = 2 * Math.PI * radius;
-    const offset = circumference - (currentSeconds / 60) * circumference;
-    const productiveColor = isDarkMode ? '#16a34a' : '#22c55e';
-
-    return (
-      <div
-        title={`${formatTime(index)} (Current)`}
-        onMouseDown={(e) => { e.preventDefault(); onToggle(index); }}
-        onMouseEnter={() => onMouseEnter(index)}
-        className="relative aspect-square w-full flex items-center justify-center cursor-pointer group z-10 scale-[1.35] sm:scale-125"
-      >
-        <svg className="absolute inset-0 w-full h-full -rotate-90 p-[0.5px]" viewBox="0 0 20 20">
-          <circle
-            cx="10"
-            cy="10"
-            r={radius}
-            fill="currentColor"
-            className="text-white dark:text-slate-800"
-            stroke="currentColor"
-            strokeWidth="1"
-          />
-          <circle
-            cx="10"
-            cy="10"
-            r={radius}
-            fill="none"
-            stroke={status === MinuteStatus.PRODUCTIVE ? productiveColor : '#ef4444'}
-            strokeWidth="2.5"
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-            strokeLinecap="round"
-            className="transition-all duration-1000 ease-linear"
-          />
-        </svg>
-        <div className={`w-1 h-1 rounded-full animate-pulse ${status === MinuteStatus.PRODUCTIVE ? 'bg-green-500 dark:bg-green-600' : 'bg-red-500'}`} />
-      </div>
-    );
-  }
+  // Determine cursor based on tool
+  const cursorClass = activeTool === 'pointer' ? 'cursor-pointer' : 'cursor-crosshair';
 
   return (
     <div
       title={formatTime(index)}
-      onMouseDown={(e) => { e.preventDefault(); !isFuture && onToggle(index); }}
+      onMouseDown={(e) => { e.preventDefault(); onMouseDown(index); }}
       onMouseEnter={() => onMouseEnter(index)}
-      className={`aspect-square w-full rounded-full transition-all duration-150 cursor-pointer shadow-sm ${getBgColor()} ${!isFuture ? 'hover:scale-150 hover:z-20' : ''}`}
+      className={`aspect-square w-full rounded-full transition-colors duration-100 ${cursorClass} ${getBgColor()}`}
     />
   );
 });
 
-export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, onToggle }) => {
+export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, activeTool, onInteract, onInteractEnd }) => {
   const [isDragging, setIsDragging] = useState(false);
-  const [seconds, setSeconds] = useState(getCurrentSeconds());
   const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains('dark'));
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setSeconds(getCurrentSeconds());
+    const observer = new MutationObserver(() => {
       setIsDarkMode(document.documentElement.classList.contains('dark'));
-    }, 1000);
-    return () => clearInterval(timer);
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
   }, []);
 
-  const handleMouseDown = useCallback(() => {
+  const handleMouseDown = useCallback((index: number) => {
     setIsDragging(true);
-  }, []);
-
-  const handleMouseUp = useCallback(() => {
-    setIsDragging(false);
-  }, []);
+    onInteract(index, false); // Initial click
+  }, [onInteract]);
 
   const handleMouseEnter = useCallback((index: number) => {
-    if (isDragging && !isFutureMinute(index, dayData.date)) {
-      onToggle(index);
+    if (isDragging) {
+      onInteract(index, true); // Dragging
     }
-  }, [isDragging, onToggle, dayData.date]);
+  }, [isDragging, onInteract]);
+
+  const handleMouseUp = useCallback(() => {
+    if (isDragging) {
+      setIsDragging(false);
+      onInteractEnd();
+    }
+  }, [isDragging, onInteractEnd]);
+
+  // Global mouse up to catch drags that end outside the grid
+  useEffect(() => {
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => window.removeEventListener('mouseup', handleMouseUp);
+  }, [handleMouseUp]);
 
   const hours = useMemo(() => {
     const h = [];
@@ -133,11 +102,7 @@ export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, onToggle }) => 
   return (
     <div 
       className="bg-white dark:bg-slate-900 p-2 xs:p-3 sm:p-6 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 select-none overflow-hidden transition-colors duration-300"
-      onMouseDown={handleMouseDown}
-      onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
-      onTouchStart={handleMouseDown}
-      onTouchEnd={handleMouseUp}
     >
       <div className="w-full">
         {/* Header - Aligned with the blocks */}
@@ -166,19 +131,15 @@ export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, onToggle }) => 
                   <div key={chunkIndex} className="grid grid-cols-10 gap-[1px] sm:gap-[1.5px]">
                     {minutes.map((status, minIndex) => {
                       const absoluteIndex = (hourIndex * 60) + (chunkIndex * 10) + minIndex;
-                      const future = isFutureMinute(absoluteIndex, dayData.date);
-                      const current = isCurrentMinute(absoluteIndex, dayData.date);
                       
                       return (
                         <MinuteCell
                           key={absoluteIndex}
                           index={absoluteIndex}
                           status={status}
-                          isFuture={future}
-                          isCurrent={current}
-                          currentSeconds={seconds}
                           isDarkMode={isDarkMode}
-                          onToggle={onToggle}
+                          activeTool={activeTool}
+                          onMouseDown={handleMouseDown}
                           onMouseEnter={handleMouseEnter}
                         />
                       );
@@ -189,14 +150,6 @@ export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, onToggle }) => 
             </div>
           ))}
         </div>
-      </div>
-      
-      {/* Legend */}
-      <div className="mt-6 sm:mt-10 flex flex-wrap justify-center gap-4 sm:gap-8 text-[8px] sm:text-[10px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest border-t border-slate-50 dark:border-slate-800 pt-5">
-        <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-green-500 dark:bg-green-600 shadow-sm shadow-green-100 dark:shadow-green-900/10"></div> Productive</div>
-        <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-sm shadow-red-100 dark:shadow-red-900/10"></div> Unproductive</div>
-        <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-green-100 dark:bg-green-900/20 border border-green-200 dark:border-green-800"></div> Planned (Prod)</div>
-        <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-red-100 dark:bg-red-900/20 border border-red-200 dark:border-red-800"></div> Planned (Unprod)</div>
       </div>
     </div>
   );

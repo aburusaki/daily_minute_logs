@@ -64,9 +64,10 @@ export const storageService = {
       return allLocal[dateKey];
     }
     
+    // Default to FUTURE (Empty/Uncolored) for new days
     return {
       date: dateKey,
-      minutes: Array(1440).fill(MinuteStatus.PRODUCTIVE)
+      minutes: Array(1440).fill(MinuteStatus.FUTURE)
     };
   },
 

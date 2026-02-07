@@ -40,12 +40,16 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ dayData }) => {
         const status = dayData.minutes[h * 60 + m];
         if (status === MinuteStatus.PRODUCTIVE) prod++;
         else if (status === MinuteStatus.UNPRODUCTIVE) unprod++;
+        // We ignore FUTURE status for scoring
       }
+      const totalLogged = prod + unprod;
       stats.push({
         hour: `${h}:00`,
         productive: prod,
         unproductive: unprod,
-        score: prod > 0 ? Math.round((prod / (prod + unprod)) * 100) : 0
+        // If nothing logged for this hour, score is 0 (or null, but 0 is safer for chart)
+        score: totalLogged > 0 ? Math.round((prod / totalLogged) * 100) : 0,
+        total: totalLogged
       });
     }
     return stats;
@@ -54,16 +58,17 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ dayData }) => {
   const pieData = useMemo(() => {
     const prod = dayData.minutes.filter(m => m === MinuteStatus.PRODUCTIVE).length;
     const unprod = dayData.minutes.filter(m => m === MinuteStatus.UNPRODUCTIVE).length;
+    // Don't include Future/Unlogged in Pie Chart
     return [
       { name: 'Productive', value: prod, color: productiveColor },
       { name: 'Unproductive', value: unprod, color: '#ef4444' }
-    ];
+    ].filter(d => d.value > 0);
   }, [dayData, productiveColor]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 transition-colors duration-300">
-        <h3 className="text-lg font-bold mb-4 text-slate-800 dark:text-slate-100">Hourly Productivity Score (%)</h3>
+        <h3 className="text-lg font-bold mb-4 text-slate-800 dark:text-slate-100">Hourly Efficiency (Logged Minutes Only)</h3>
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={hourlyData}>
@@ -96,7 +101,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ dayData }) => {
               />
               <Bar dataKey="score">
                 {hourlyData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.score > 70 ? productiveColor : entry.score > 40 ? '#f59e0b' : '#ef4444'} />
+                  <Cell key={`cell-${index}`} fill={entry.total === 0 ? 'transparent' : (entry.score > 70 ? productiveColor : entry.score > 40 ? '#f59e0b' : '#ef4444')} />
                 ))}
               </Bar>
             </BarChart>
@@ -105,41 +110,45 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ dayData }) => {
       </div>
 
       <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col items-center transition-colors duration-300">
-        <h3 className="text-lg font-bold mb-4 text-slate-800 dark:text-slate-100 w-full text-center lg:text-left">Daily Breakdown</h3>
-        <div className="h-48 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={pieData}
-                innerRadius={60}
-                outerRadius={80}
-                paddingAngle={5}
-                dataKey="value"
-                stroke="none"
-              >
-                {pieData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip 
-                contentStyle={{ 
-                  borderRadius: '12px', 
-                  border: 'none', 
-                  backgroundColor: isDarkMode ? '#1e293b' : '#ffffff',
-                  color: isDarkMode ? '#f1f5f9' : '#1e293b'
-                }}
-              />
-            </PieChart>
-          </ResponsiveContainer>
+        <h3 className="text-lg font-bold mb-4 text-slate-800 dark:text-slate-100 w-full text-center lg:text-left">Breakdown</h3>
+        <div className="h-48 w-full flex items-center justify-center">
+          {pieData.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={pieData}
+                  innerRadius={60}
+                  outerRadius={80}
+                  paddingAngle={5}
+                  dataKey="value"
+                  stroke="none"
+                >
+                  {pieData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip 
+                  contentStyle={{ 
+                    borderRadius: '12px', 
+                    border: 'none', 
+                    backgroundColor: isDarkMode ? '#1e293b' : '#ffffff',
+                    color: isDarkMode ? '#f1f5f9' : '#1e293b'
+                  }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+             <div className="text-sm text-slate-400 font-medium">No data logged yet</div>
+          )}
         </div>
         <div className="flex gap-4 mt-4">
           <div className="flex items-center gap-2">
             <div className={`w-3 h-3 rounded-full`} style={{ backgroundColor: productiveColor }}></div>
-            <span className="text-sm text-slate-600 dark:text-slate-400">Productive</span>
+            <span className="text-sm text-slate-600 dark:text-slate-400">Work</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-red-500"></div>
-            <span className="text-sm text-slate-600 dark:text-slate-400">Unproductive</span>
+            <span className="text-sm text-slate-600 dark:text-slate-400">Break</span>
           </div>
         </div>
       </div>
