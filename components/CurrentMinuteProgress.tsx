@@ -1,32 +1,31 @@
 
 import React, { useState, useEffect } from 'react';
 import { DayData, MinuteStatus } from '../types';
-import { getCurrentMinuteIndex, getCurrentSeconds, formatTime } from '../utils/dateUtils';
+import { formatTime } from '../utils/dateUtils';
 
 interface CurrentMinuteProgressProps {
   dayData: DayData;
+  currentSeconds: number;
+  currentMinuteIndex: number;
 }
 
-export const CurrentMinuteProgress: React.FC<CurrentMinuteProgressProps> = ({ dayData }) => {
-  const [seconds, setSeconds] = useState(getCurrentSeconds());
+export const CurrentMinuteProgress: React.FC<CurrentMinuteProgressProps> = ({ dayData, currentSeconds, currentMinuteIndex }) => {
   const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains('dark'));
-  const currentIndex = getCurrentMinuteIndex();
-  const currentStatus = dayData.minutes[currentIndex];
+  const currentStatus = dayData.minutes[currentMinuteIndex];
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setSeconds(getCurrentSeconds());
-      // Re-check dark mode class in case it changed via toggle
+    const observer = new MutationObserver(() => {
       setIsDarkMode(document.documentElement.classList.contains('dark'));
-    }, 1000);
-    return () => clearInterval(interval);
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
   }, []);
 
   const size = 100;
   const strokeWidth = 8;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (seconds / 60) * circumference;
+  const offset = circumference - (currentSeconds / 60) * circumference;
 
   // Determine colors based on status
   const getStrokeColor = () => {
@@ -81,7 +80,7 @@ export const CurrentMinuteProgress: React.FC<CurrentMinuteProgressProps> = ({ da
         {/* Center Text */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className="text-lg font-black text-slate-800 dark:text-slate-100 leading-none">
-            {60 - seconds}
+            {60 - currentSeconds}
           </span>
           <span className="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tighter">
             secs left
@@ -93,7 +92,7 @@ export const CurrentMinuteProgress: React.FC<CurrentMinuteProgressProps> = ({ da
           Current Minute
         </div>
         <div className={`text-sm font-black ${getTextColor()}`}>
-          {formatTime(currentIndex)}
+          {formatTime(currentMinuteIndex)}
         </div>
       </div>
     </div>

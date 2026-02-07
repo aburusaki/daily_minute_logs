@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { MinuteStatus, DayData } from '../types';
 import { formatTime } from '../utils/dateUtils';
 
@@ -8,6 +8,8 @@ interface MinuteGridProps {
   activeTool: string;
   onInteract: (index: number, isDragging: boolean) => void;
   onInteractEnd: () => void;
+  currentMinuteIndex: number;
+  currentSeconds: number;
 }
 
 const MinuteCell = React.memo(({ 
@@ -16,7 +18,9 @@ const MinuteCell = React.memo(({
   isDarkMode,
   activeTool,
   onMouseDown, 
-  onMouseEnter 
+  onMouseEnter,
+  currentSeconds,
+  isCurrent
 }: { 
   index: number; 
   status: MinuteStatus; 
@@ -24,8 +28,11 @@ const MinuteCell = React.memo(({
   activeTool: string;
   onMouseDown: (index: number) => void;
   onMouseEnter: (index: number) => void;
+  currentSeconds?: number;
+  isCurrent: boolean;
 }) => {
-  const getBgColor = () => {
+  // Base background color
+  const getBgColorClass = () => {
     switch (status) {
       case MinuteStatus.PRODUCTIVE:
         return 'bg-green-500 dark:bg-green-600 shadow-sm shadow-green-200 dark:shadow-green-900/20';
@@ -37,21 +44,63 @@ const MinuteCell = React.memo(({
     }
   };
 
-  // Determine cursor based on tool
   const cursorClass = activeTool === 'pointer' ? 'cursor-pointer' : 'cursor-crosshair';
+  
+  // Dynamic style for the seconds flow
+  let dynamicStyle: React.CSSProperties = {};
+  
+  if (isCurrent && currentSeconds !== undefined) {
+    const degrees = currentSeconds * 6; // 360 / 60 = 6
+    
+    // Define colors for the flow
+    let filledColor = '';
+    let emptyColor = '';
+
+    if (status === MinuteStatus.PRODUCTIVE) {
+      filledColor = isDarkMode ? '#16a34a' : '#22c55e'; // green-600 / green-500
+      emptyColor = isDarkMode ? '#052e16' : '#dcfce7'; // Darker green / Light green
+    } else if (status === MinuteStatus.UNPRODUCTIVE) {
+      filledColor = '#ef4444'; // red-500
+      emptyColor = isDarkMode ? '#450a0a' : '#fee2e2'; // Darker red / Light red
+    } else {
+      // Future/Empty
+      filledColor = isDarkMode ? '#475569' : '#94a3b8'; // slate-600 / slate-400
+      emptyColor = isDarkMode ? '#1e293b' : '#f1f5f9'; // slate-800 / slate-100
+    }
+
+    dynamicStyle = {
+      backgroundImage: `conic-gradient(${filledColor} ${degrees}deg, ${emptyColor} 0deg)`
+    };
+  }
+
+  const finalClass = isCurrent 
+    ? `aspect-square w-full rounded-full transition-colors duration-100 ${cursorClass}` 
+    : `aspect-square w-full rounded-full transition-colors duration-100 ${cursorClass} ${getBgColorClass()}`;
 
   return (
     <div
       title={formatTime(index)}
       onMouseDown={(e) => { e.preventDefault(); onMouseDown(index); }}
       onMouseEnter={() => onMouseEnter(index)}
-      className={`aspect-square w-full rounded-full transition-colors duration-100 ${cursorClass} ${getBgColor()}`}
+      className={finalClass}
+      style={dynamicStyle}
     />
+  );
+}, (prev, next) => {
+  // Custom equality check for performance
+  return (
+    prev.status === next.status &&
+    prev.isDarkMode === next.isDarkMode &&
+    prev.activeTool === next.activeTool &&
+    prev.isCurrent === next.isCurrent &&
+    // Only check seconds if it is current, otherwise ignore
+    (prev.isCurrent ? prev.currentSeconds === next.currentSeconds : true)
   );
 });
 
-export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, activeTool, onInteract, onInteractEnd }) => {
-  const [isDragging, setIsDragging] = useState(false);
+export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, activeTool, onInteract, onInteractEnd, currentMinuteIndex, currentSeconds }) => {
+  // Use ref for drag state to avoid stale closures in callbacks without triggering re-renders that MinuteCell memo ignores
+  const isDragging = useRef(false);
   const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains('dark'));
 
   useEffect(() => {
@@ -63,22 +112,22 @@ export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, activeTool, onI
   }, []);
 
   const handleMouseDown = useCallback((index: number) => {
-    setIsDragging(true);
+    isDragging.current = true;
     onInteract(index, false); // Initial click
   }, [onInteract]);
 
   const handleMouseEnter = useCallback((index: number) => {
-    if (isDragging) {
+    if (isDragging.current) {
       onInteract(index, true); // Dragging
     }
-  }, [isDragging, onInteract]);
+  }, [onInteract]);
 
   const handleMouseUp = useCallback(() => {
-    if (isDragging) {
-      setIsDragging(false);
+    if (isDragging.current) {
+      isDragging.current = false;
       onInteractEnd();
     }
-  }, [isDragging, onInteractEnd]);
+  }, [onInteractEnd]);
 
   // Global mouse up to catch drags that end outside the grid
   useEffect(() => {
@@ -131,6 +180,7 @@ export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, activeTool, onI
                   <div key={chunkIndex} className="grid grid-cols-10 gap-[1px] sm:gap-[1.5px]">
                     {minutes.map((status, minIndex) => {
                       const absoluteIndex = (hourIndex * 60) + (chunkIndex * 10) + minIndex;
+                      const isCurrent = absoluteIndex === currentMinuteIndex;
                       
                       return (
                         <MinuteCell
@@ -141,6 +191,8 @@ export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, activeTool, onI
                           activeTool={activeTool}
                           onMouseDown={handleMouseDown}
                           onMouseEnter={handleMouseEnter}
+                          isCurrent={isCurrent}
+                          currentSeconds={isCurrent ? currentSeconds : undefined}
                         />
                       );
                     })}

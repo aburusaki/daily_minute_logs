@@ -2,8 +2,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { DayData, MinuteStatus } from './types';
 import { storageService } from './services/storageService';
-import { getTodayKey } from './utils/dateUtils';
+import { getTodayKey, getCurrentMinuteIndex, getCurrentSeconds } from './utils/dateUtils';
 import { MinuteGrid } from './components/MinuteGrid';
+import { CurrentMinuteProgress } from './components/CurrentMinuteProgress';
 import { StatsDashboard } from './components/StatsDashboard';
 import { supabase } from './services/supabaseClient';
 
@@ -17,6 +18,10 @@ const App: React.FC = () => {
   const [activeTool, setActiveTool] = useState<ToolType>('pointer');
   const [showBulkModal, setShowBulkModal] = useState(false);
   
+  // Time State
+  const [currentSeconds, setCurrentSeconds] = useState(getCurrentSeconds());
+  const [currentMinuteIndex, setCurrentMinuteIndex] = useState(getCurrentMinuteIndex());
+
   // Bulk Edit State
   const [bulkStart, setBulkStart] = useState("09:00");
   const [bulkEnd, setBulkEnd] = useState("17:00");
@@ -41,17 +46,23 @@ const App: React.FC = () => {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
+  // Global Timer
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = new Date();
+      setCurrentSeconds(now.getSeconds());
+      setCurrentMinuteIndex(now.getHours() * 60 + now.getMinutes());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
 
   // Initial Data Load
   useEffect(() => {
     const init = async () => {
       setIsLoading(true);
-      // When getting data, if it's a new day, it defaults to FUTURE (Empty) via storageService
       const data = await storageService.getDayData(currentDate);
-      
-      // If the data returned has 'FUTURE' status, it will render as empty gray dots.
-      // If it was a legacy day with old data, it preserves it.
       setDayData(data);
       setIsLoading(false);
     };
@@ -103,7 +114,6 @@ const App: React.FC = () => {
       let hasChanged = false;
 
       if (activeTool === 'pointer') {
-        // Pointer only works on click (not drag) to toggle
         if (!isDragging) {
           const current = newMinutes[index];
           // Cycle: Future -> Productive -> Unproductive -> Future
@@ -113,11 +123,10 @@ const App: React.FC = () => {
           hasChanged = true;
         }
       } else {
-        // Brush tools work on click and drag
         const targetStatus = 
           activeTool === 'brush-prod' ? MinuteStatus.PRODUCTIVE :
           activeTool === 'brush-unprod' ? MinuteStatus.UNPRODUCTIVE :
-          MinuteStatus.FUTURE; // Eraser
+          MinuteStatus.FUTURE;
 
         if (newMinutes[index] !== targetStatus) {
           newMinutes[index] = targetStatus;
@@ -132,17 +141,14 @@ const App: React.FC = () => {
     });
   }, [activeTool]);
 
-  // Finalize interaction (Mouse Up) - Persist to DB
   const handleInteractionEnd = useCallback(() => {
     if (dayData) {
       persistData(dayData);
     }
   }, [dayData, persistData]);
 
-  // Bulk Edit Handler
   const applyBulkEdit = () => {
     if (!dayData) return;
-
     const [startH, startM] = bulkStart.split(':').map(Number);
     const [endH, endM] = bulkEnd.split(':').map(Number);
     
@@ -173,22 +179,19 @@ const App: React.FC = () => {
     );
   }
 
-  // --- Stats Calculation (Manual Only) ---
-  // Only count minutes that are NOT 'FUTURE' (Unlogged)
+  // Stats
   const loggedMinutes = dayData.minutes.filter(m => m !== MinuteStatus.FUTURE);
   const totalLogged = loggedMinutes.length;
   const productiveCount = loggedMinutes.filter(m => m === MinuteStatus.PRODUCTIVE).length;
   const unproductiveCount = loggedMinutes.filter(m => m === MinuteStatus.UNPRODUCTIVE).length;
-  
-  // If nothing is logged, efficiency is 100% (innocent until proven guilty) or 0? 
-  // Let's go with - (empty) representation or 0.
   const efficiency = totalLogged > 0 ? Math.round((productiveCount / totalLogged) * 100) : 0;
-  // -------------------------------------
+  
+  // Check if viewing today for live animation
+  const isToday = currentDate === getTodayKey();
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 pb-20 transition-colors duration-300">
       
-      {/* Header */}
       <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-4 flex flex-col lg:flex-row justify-between items-center gap-4 sticky top-0 z-50 shadow-sm">
         <div className="flex items-center gap-4 w-full lg:w-auto">
           <div className="w-10 h-10 bg-slate-900 dark:bg-slate-100 rounded-lg flex items-center justify-center text-white dark:text-slate-900 font-bold text-xl">
@@ -202,7 +205,6 @@ const App: React.FC = () => {
           <div className="lg:hidden text-2xl font-black text-slate-900 dark:text-slate-100">{efficiency}%</div>
         </div>
 
-        {/* Tools */}
         <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner overflow-x-auto no-scrollbar w-full lg:w-auto">
           <button 
             onClick={() => setActiveTool('pointer')}
@@ -231,7 +233,6 @@ const App: React.FC = () => {
           </button>
         </div>
 
-        {/* Date & Bulk */}
         <div className="flex items-center gap-2 w-full lg:w-auto">
           <input 
             type="date" 
@@ -256,15 +257,12 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
         
-        {/* Bulk Edit Modal */}
         {showBulkModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
             <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md p-6 border border-slate-200 dark:border-slate-800">
               <h2 className="text-xl font-bold mb-4 dark:text-white">Bulk Edit Range</h2>
-              
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>
                   <label className="text-xs font-bold text-slate-500 uppercase">From</label>
@@ -275,7 +273,6 @@ const App: React.FC = () => {
                   <input type="time" value={bulkEnd} onChange={e => setBulkEnd(e.target.value)} className="w-full mt-1 p-2 bg-slate-100 dark:bg-slate-800 rounded-lg border-none" />
                 </div>
               </div>
-
               <div className="mb-6">
                 <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Set Status To</label>
                 <div className="grid grid-cols-3 gap-2">
@@ -284,7 +281,6 @@ const App: React.FC = () => {
                   <button onClick={() => setBulkAction(MinuteStatus.FUTURE)} className={`p-3 rounded-xl text-sm font-bold border-2 ${bulkAction === MinuteStatus.FUTURE ? 'border-slate-500 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300' : 'border-slate-200 dark:border-slate-700 text-slate-500'}`}>Clear</button>
                 </div>
               </div>
-
               <div className="flex gap-3">
                 <button onClick={() => setShowBulkModal(false)} className="flex-1 py-3 text-sm font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors">Cancel</button>
                 <button onClick={applyBulkEdit} className="flex-1 py-3 text-sm font-bold bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 rounded-xl shadow-lg hover:opacity-90 transition-opacity">Apply</button>
@@ -293,7 +289,10 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Grid Section */}
+        <section className="flex justify-center">
+          <CurrentMinuteProgress dayData={dayData} currentSeconds={currentSeconds} currentMinuteIndex={currentMinuteIndex} />
+        </section>
+
         <section>
           <div className="flex items-center justify-between mb-2">
              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">
@@ -312,11 +311,12 @@ const App: React.FC = () => {
               activeTool={activeTool}
               onInteract={handleInteraction}
               onInteractEnd={handleInteractionEnd}
+              currentMinuteIndex={isToday ? currentMinuteIndex : -1}
+              currentSeconds={currentSeconds}
             />
           </div>
         </section>
 
-        {/* Stats Cards */}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
             <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Productive</div>
