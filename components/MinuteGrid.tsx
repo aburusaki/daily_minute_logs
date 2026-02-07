@@ -79,6 +79,7 @@ const MinuteCell = React.memo(({
 
   return (
     <div
+      data-index={index}
       title={formatTime(index)}
       onMouseDown={(e) => { e.preventDefault(); onMouseDown(index); }}
       onMouseEnter={() => onMouseEnter(index)}
@@ -101,6 +102,7 @@ const MinuteCell = React.memo(({
 export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, activeTool, onInteract, onInteractEnd, currentMinuteIndex, currentSeconds }) => {
   // Use ref for drag state to avoid stale closures in callbacks without triggering re-renders that MinuteCell memo ignores
   const isDragging = useRef(false);
+  const lastTouchedIndex = useRef<number>(-1);
   const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains('dark'));
 
   useEffect(() => {
@@ -129,11 +131,65 @@ export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, activeTool, onI
     }
   }, [onInteractEnd]);
 
+  // Touch Handlers for Mobile Painting
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    isDragging.current = true;
+    
+    // Initial touch interaction
+    const touch = e.touches[0];
+    const target = document.elementFromPoint(touch.clientX, touch.clientY);
+    const indexStr = target?.getAttribute('data-index');
+    
+    if (indexStr) {
+      const index = parseInt(indexStr, 10);
+      lastTouchedIndex.current = index;
+      onInteract(index, false);
+    }
+  }, [onInteract]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    // Prevent scrolling if we are using a brush (painting)
+    // If using pointer (toggle), we allow scrolling
+    if (activeTool !== 'pointer') {
+      if (e.cancelable) e.preventDefault();
+    }
+
+    if (!isDragging.current) return;
+
+    const touch = e.touches[0];
+    const target = document.elementFromPoint(touch.clientX, touch.clientY);
+    const indexStr = target?.getAttribute('data-index');
+
+    if (indexStr) {
+      const index = parseInt(indexStr, 10);
+      // Only fire if we moved to a new cell
+      if (lastTouchedIndex.current !== index) {
+        lastTouchedIndex.current = index;
+        // If tool is pointer, we generally don't want "drag to toggle" on mobile as it's confusing with scroll
+        // But for brushes, we definitely want drag to paint
+        if (activeTool !== 'pointer') {
+          onInteract(index, true);
+        }
+      }
+    }
+  }, [activeTool, onInteract]);
+
+  const handleTouchEnd = useCallback(() => {
+    isDragging.current = false;
+    lastTouchedIndex.current = -1;
+    onInteractEnd();
+  }, [onInteractEnd]);
+
   // Global mouse up to catch drags that end outside the grid
   useEffect(() => {
     window.addEventListener('mouseup', handleMouseUp);
-    return () => window.removeEventListener('mouseup', handleMouseUp);
-  }, [handleMouseUp]);
+    // Also handle touch end globally just in case
+    window.addEventListener('touchend', handleTouchEnd);
+    return () => {
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [handleMouseUp, handleTouchEnd]);
 
   const hours = useMemo(() => {
     const h = [];
@@ -150,14 +206,18 @@ export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, activeTool, onI
 
   return (
     <div 
-      className="bg-white dark:bg-slate-900 p-2 xs:p-3 sm:p-6 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 select-none overflow-hidden transition-colors duration-300"
+      className="bg-white dark:bg-slate-900 p-2 xs:p-3 sm:p-6 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 select-none overflow-hidden transition-colors duration-300 touch-none"
       onMouseLeave={handleMouseUp}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      style={{ touchAction: activeTool === 'pointer' ? 'pan-y' : 'none' }}
     >
       <div className="w-full">
         {/* Header - Aligned with the blocks */}
         <div className="flex mb-1 sm:mb-2 items-center">
           <div className="w-8 xs:w-10 sm:w-16 flex-shrink-0" /> {/* Spacer for hour label */}
-          <div className="flex-1 grid grid-cols-3 sm:grid-cols-6 gap-[2px] sm:gap-2">
+          <div className="flex-1 grid grid-cols-2 sm:grid-cols-6 gap-[2px] sm:gap-2">
             {['00', '10', '20', '30', '40', '50'].map(val => (
               <div key={val} className="text-[7px] xs:text-[9px] sm:text-[10px] text-slate-400 dark:text-slate-600 font-mono font-bold uppercase tracking-widest text-center">
                 {val}
@@ -174,9 +234,8 @@ export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, activeTool, onI
                 {hourIndex.toString().padStart(2, '0')}h
               </div>
               
-              {/* Hour Grid - 6 blocks of 10 minutes */}
-              {/* Mobile: 3 columns (2 rows of 3), Desktop: 6 columns (1 row of 6) */}
-              <div className="flex-1 grid grid-cols-3 sm:grid-cols-6 gap-[2px] sm:gap-2 items-center">
+              {/* Hour Grid - Changed to grid-cols-2 for mobile (3 rows) */}
+              <div className="flex-1 grid grid-cols-2 sm:grid-cols-6 gap-[2px] sm:gap-2 items-center">
                 {chunks.map((minutes, chunkIndex) => (
                   <div key={chunkIndex} className="grid grid-cols-10 gap-[1px] sm:gap-[1.5px]">
                     {minutes.map((status, minIndex) => {
