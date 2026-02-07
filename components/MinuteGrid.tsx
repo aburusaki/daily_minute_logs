@@ -103,6 +103,7 @@ export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, activeTool, onI
   // Use ref for drag state to avoid stale closures in callbacks without triggering re-renders that MinuteCell memo ignores
   const isDragging = useRef(false);
   const lastTouchedIndex = useRef<number>(-1);
+  const lastTouchTime = useRef<number>(0);
   const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains('dark'));
 
   useEffect(() => {
@@ -114,6 +115,10 @@ export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, activeTool, onI
   }, []);
 
   const handleMouseDown = useCallback((index: number) => {
+    // Prevent mouse event if it was preceded by a touch event (hybrid device or mobile tap)
+    if (Date.now() - lastTouchTime.current < 800) {
+      return;
+    }
     isDragging.current = true;
     onInteract(index, false); // Initial click
   }, [onInteract]);
@@ -134,6 +139,7 @@ export const MinuteGrid: React.FC<MinuteGridProps> = ({ dayData, activeTool, onI
   // Touch Handlers for Mobile Painting
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     isDragging.current = true;
+    lastTouchTime.current = Date.now();
     
     // Initial touch interaction
     const touch = e.touches[0];
