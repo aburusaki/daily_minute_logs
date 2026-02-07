@@ -12,11 +12,14 @@ export const storageService = {
   },
 
   // Save both locally and to Supabase
-  saveDayData: async (data: DayData): Promise<void> => {
+  // Returns true if sync was successful (or offline mode), false if sync failed
+  saveDayData: async (data: DayData): Promise<boolean> => {
+    // 1. Save Local
     const allLocal = storageService.getLocalAll();
     allLocal[data.date] = data;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(allLocal));
 
+    // 2. Sync Supabase
     if (supabase) {
       try {
         const { error } = await supabase
@@ -27,11 +30,19 @@ export const storageService = {
             updated_at: new Date().toISOString()
           }, { onConflict: 'date' });
         
-        if (error) console.warn('Supabase sync error:', error.message);
+        if (error) {
+          console.error('Supabase sync error:', error.message, error.details);
+          return false;
+        }
+        return true;
       } catch (e) {
         console.error('Failed to sync with Supabase:', e);
+        return false;
       }
     }
+    
+    // If no supabase configured, consider local save as success
+    return true; 
   },
 
   // Fetch from Supabase with fallback to local
@@ -55,7 +66,7 @@ export const storageService = {
           return dayData;
         }
       } catch (e) {
-        console.warn('Supabase fetch failed or record missing');
+        console.warn('Supabase fetch failed or record missing, falling back to local');
       }
     }
 
