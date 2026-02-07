@@ -192,8 +192,9 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 pb-20 transition-colors duration-300">
       
-      <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-4 flex flex-col lg:flex-row justify-between items-center gap-4 sticky top-0 z-50 shadow-sm">
-        <div className="flex items-center gap-4 w-full lg:w-auto">
+      {/* Static Header: Logo and Efficiency (Unsticky) */}
+      <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-4 flex justify-between items-center transition-colors duration-300">
+        <div className="flex items-center gap-4">
           <div className="w-10 h-10 bg-slate-900 dark:bg-slate-100 rounded-lg flex items-center justify-center text-white dark:text-slate-900 font-bold text-xl">
             M
           </div>
@@ -201,65 +202,7 @@ const App: React.FC = () => {
             <h1 className="text-lg font-bold tracking-tight">Minute Flow</h1>
             <p className="text-[10px] text-slate-500 uppercase tracking-wider">{currentDate}</p>
           </div>
-          <div className="flex-1 lg:hidden"></div>
-          {/* Mobile Efficiency hidden here if showing chart later, but keeping for now */}
-          <div className="lg:hidden text-xl font-black text-slate-900 dark:text-slate-100">{efficiency}%</div>
-        </div>
-
-        {/* Current Minute Progress - Sticky in Header */}
-        <div className="w-full lg:w-auto flex justify-center order-last lg:order-none">
-          <CurrentMinuteProgress 
-            dayData={dayData} 
-            currentSeconds={currentSeconds} 
-            currentMinuteIndex={isToday ? currentMinuteIndex : -1} 
-            compact={true} 
-          />
-        </div>
-
-        <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner overflow-x-auto no-scrollbar w-full lg:w-auto">
-          <button 
-            onClick={() => setActiveTool('pointer')}
-            className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTool === 'pointer' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500'}`}
-          >
-            <span>👆</span> Toggle
-          </button>
-          <div className="w-px h-4 bg-slate-300 dark:bg-slate-600 mx-1"></div>
-          <button 
-            onClick={() => setActiveTool('brush-prod')}
-            className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTool === 'brush-prod' ? 'bg-green-500 text-white shadow-sm' : 'text-slate-500 hover:text-green-600'}`}
-          >
-            <span>🖌️</span> Focus
-          </button>
-          <button 
-            onClick={() => setActiveTool('brush-unprod')}
-            className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTool === 'brush-unprod' ? 'bg-red-500 text-white shadow-sm' : 'text-slate-500 hover:text-red-500'}`}
-          >
-            <span>🖌️</span> Break
-          </button>
-          <button 
-            onClick={() => setActiveTool('eraser')}
-            className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTool === 'eraser' ? 'bg-slate-300 dark:bg-slate-600 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500'}`}
-          >
-            <span>🧹</span> Clear
-          </button>
-        </div>
-
-        <div className="flex items-center gap-2 w-full lg:w-auto">
-          <input 
-            type="date" 
-            value={currentDate}
-            onChange={(e) => setCurrentDate(e.target.value)}
-            className="bg-slate-100 dark:bg-slate-800 border-none rounded-xl text-sm font-semibold px-3 py-2 text-center w-full lg:w-auto cursor-pointer"
-          />
-          <button 
-            onClick={() => setShowBulkModal(true)}
-            className="px-4 py-2 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold rounded-xl whitespace-nowrap hover:opacity-90"
-          >
-            Range
-          </button>
-          <button onClick={toggleTheme} className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500">
-             {theme === 'light' ? '🌙' : '☀️'}
-          </button>
+          <div className="lg:hidden ml-2 text-xl font-black text-slate-900 dark:text-slate-100">{efficiency}%</div>
         </div>
 
         <div className="hidden lg:block text-right">
@@ -267,6 +210,72 @@ const App: React.FC = () => {
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Efficiency</div>
         </div>
       </header>
+
+      {/* Sticky Toolbar: Tools and Controls */}
+      <div className="sticky top-0 z-50 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm border-b border-slate-200 dark:border-slate-800 shadow-sm px-4 sm:px-6 py-2 transition-colors duration-300">
+        <div className="flex flex-col lg:flex-row items-center gap-2 lg:justify-between">
+          
+          {/* Row 1 (Mobile): Tools */}
+          <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner overflow-x-auto no-scrollbar w-full lg:w-auto">
+            <button 
+              onClick={() => setActiveTool('pointer')}
+              className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTool === 'pointer' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500'}`}
+            >
+              <span>👆</span> Toggle
+            </button>
+            <div className="w-px h-4 bg-slate-300 dark:bg-slate-600 mx-1"></div>
+            <button 
+              onClick={() => setActiveTool('brush-prod')}
+              className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTool === 'brush-prod' ? 'bg-green-500 text-white shadow-sm' : 'text-slate-500 hover:text-green-600'}`}
+            >
+              <span>🖌️</span> Focus
+            </button>
+            <button 
+              onClick={() => setActiveTool('brush-unprod')}
+              className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTool === 'brush-unprod' ? 'bg-red-500 text-white shadow-sm' : 'text-slate-500 hover:text-red-500'}`}
+            >
+              <span>🖌️</span> Break
+            </button>
+            <button 
+              onClick={() => setActiveTool('eraser')}
+              className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${activeTool === 'eraser' ? 'bg-slate-300 dark:bg-slate-600 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500'}`}
+            >
+              <span>🧹</span> Clear
+            </button>
+          </div>
+
+          {/* Row 2 (Mobile): Current Minute + Calendar/Range/Theme */}
+          <div className="flex items-center w-full lg:w-auto gap-2 justify-between lg:justify-end">
+             <div className="flex-shrink-0">
+               <CurrentMinuteProgress 
+                  dayData={dayData} 
+                  currentSeconds={currentSeconds} 
+                  currentMinuteIndex={isToday ? currentMinuteIndex : -1} 
+                  compact={true} 
+               />
+             </div>
+             
+             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar justify-end flex-1">
+                <input 
+                  type="date" 
+                  value={currentDate}
+                  onChange={(e) => setCurrentDate(e.target.value)}
+                  className="bg-slate-100 dark:bg-slate-800 border-none rounded-xl text-xs sm:text-sm font-semibold px-2 sm:px-3 py-2 text-center w-auto cursor-pointer max-w-[120px]"
+                />
+                <button 
+                  onClick={() => setShowBulkModal(true)}
+                  className="px-3 sm:px-4 py-2 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold rounded-xl whitespace-nowrap hover:opacity-90"
+                >
+                  Range
+                </button>
+                <button onClick={toggleTheme} className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 flex-shrink-0">
+                  {theme === 'light' ? '🌙' : '☀️'}
+                </button>
+             </div>
+          </div>
+
+        </div>
+      </div>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
         
@@ -299,8 +308,6 @@ const App: React.FC = () => {
             </div>
           </div>
         )}
-
-        {/* Removed CurrentMinuteProgress from main since it's now in header */}
 
         <section>
           <div className="flex items-center justify-between mb-2">
